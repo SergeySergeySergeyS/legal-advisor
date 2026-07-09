@@ -127,15 +127,7 @@ def safe_decode(content):
 def ask_legal_advisor(question: str, category: str, chat_history: list, auth_key: str) -> str:
     """
     Отправляет вопрос в GigaChat и возвращает ответ
-    
-    Args:
-        question: Вопрос пользователя
-        category: Категория вопроса
-        chat_history: История чата
-        auth_key: Ключ GigaChat API
-    
-    Returns:
-        str: Ответ ИИ
+    Использует простой способ — промт как строку
     """
     try:
         llm = GigaChat(
@@ -147,19 +139,25 @@ def ask_legal_advisor(question: str, category: str, chat_history: list, auth_key
         # Формируем системный промт
         system_prompt = get_system_prompt(category)
         
-        # Формируем сообщения в правильном формате для gigachat
-        messages = [Messages(role=MessagesRole.SYSTEM, content=system_prompt)]
+        # Формируем единый промт с историей
+        full_prompt = system_prompt + "\n\n"
         
-        # Добавляем историю чата (последние 10 сообщений для контекста)
-        for msg in chat_history[-10:]:
-            role = MessagesRole.USER if msg["role"] == "user" else MessagesRole.ASSISTANT
-            messages.append(Messages(role=role, content=msg["content"]))
+        # Добавляем историю чата
+        if chat_history:
+            full_prompt += "ИСТОРИЯ ДИАЛОГА:\n"
+            for msg in chat_history[-6:]:  # Последние 6 сообщений
+                if msg["role"] == "user":
+                    full_prompt += f"Вопрос пользователя: {msg['content']}\n"
+                else:
+                    full_prompt += f"Твой ответ: {msg['content']}\n"
+            full_prompt += "\n"
         
         # Добавляем текущий вопрос
-        messages.append(Messages(role=MessagesRole.USER, content=question))
+        full_prompt += f"НОВЫЙ ВОПРОС ПОЛЬЗОВАТЕЛЯ: {question}\n\n"
+        full_prompt += "Дай структурированный ответ по шаблону из системного промта."
         
-        # Отправляем запрос
-        response = llm.chat(messages)
+        # Отправляем запрос — простой способ через строку
+        response = llm(full_prompt)
         answer = safe_decode(response.choices[0].message.content)
         
         return answer
