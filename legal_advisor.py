@@ -2,6 +2,7 @@
 Модуль работы с GigaChat для юридического консультанта
 """
 from gigachat import GigaChat
+from gigachat.models import Chat, Messages, MessagesRole
 import streamlit as st
 
 
@@ -91,43 +92,33 @@ def safe_decode(content):
 def ask_legal_advisor(question: str, category: str, chat_history: list, auth_key: str) -> str:
     """
     Отправляет вопрос в GigaChat и возвращает ответ.
-    Использует простой способ — передаём промт как строку.
+    Использует правильный API: объект Chat + контекстный менеджер.
     """
     try:
-        # Создаём объект GigaChat
-        llm = GigaChat(
-            credentials=auth_key,
-            scope="GIGACHAT_API_PERS",
-            verify_ssl_certs=False
-        )
-        
         # Получаем системный промт для категории
         system_prompt = get_system_prompt(category)
         
-        # Формируем полный промт как ОДНУ СТРОКУ
-        full_prompt = system_prompt + "\n\n"
+        # Формируем список сообщений
+        messages = [Messages(role=MessagesRole.SYSTEM, content=system_prompt)]
         
-        # Добавляем историю чата (если есть)
+        # Добавляем историю чата (последние 6 сообщений)
         if chat_history:
-            full_prompt += "ИСТОРИЯ ДИАЛОГА:\n"
             for msg in chat_history[-6:]:
-                if msg["role"] == "user":
-                    full_prompt += f"Вопрос: {msg['content']}\n"
-                else:
-                    full_prompt += f"Ответ: {msg['content']}\n"
-            full_prompt += "\n"
+                role = MessagesRole.USER if msg["role"] == "user" else MessagesRole.ASSISTANT
+                messages.append(Messages(role=role, content=msg["content"]))
         
         # Добавляем текущий вопрос
-        full_prompt += f"НОВЫЙ ВОПРОС: {question}\n\n"
-        full_prompt += "Дай структурированный ответ по шаблону."
+        messages.append(Messages(role=MessagesRole.USER, content=question))
         
-        # === САМЫЙ ПРОСТОЙ СПОСОБ ВЫЗОВА ===
-        # Вызываем llm как функцию с одной строкой
-        response = llm(full_prompt)
-        
-        # Получаем ответ
-        answer = response.choices[0].message.content
-        answer = safe_decode(answer)
+        # === ПРАВИЛЬНЫЙ API: используем Chat и контекстный менеджер ===
+        with GigaChat(
+            credentials=auth_key,
+            scope="GIGACHAT_API_PERS",
+            verify_ssl_certs=False
+        ) as giga:
+            response = giga.chat(Chat(messages=messages))
+            answer = response.choices[0].message.content
+            answer = safe_decode(answer)
         
         return answer
         
