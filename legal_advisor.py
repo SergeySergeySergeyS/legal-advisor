@@ -2,6 +2,7 @@
 Модуль работы с GigaChat для юридического консультанта
 """
 from gigachat import GigaChat
+from gigachat.models import Messages, MessagesRole
 import streamlit as st
 
 
@@ -146,15 +147,16 @@ def ask_legal_advisor(question: str, category: str, chat_history: list, auth_key
         # Формируем системный промт
         system_prompt = get_system_prompt(category)
         
-        # Формируем сообщение с историей
-        messages = [{"role": "system", "content": system_prompt}]
+        # Формируем сообщения в правильном формате для gigachat
+        messages = [Messages(role=MessagesRole.SYSTEM, content=system_prompt)]
         
         # Добавляем историю чата (последние 10 сообщений для контекста)
         for msg in chat_history[-10:]:
-            messages.append({"role": msg["role"], "content": msg["content"]})
+            role = MessagesRole.USER if msg["role"] == "user" else MessagesRole.ASSISTANT
+            messages.append(Messages(role=role, content=msg["content"]))
         
         # Добавляем текущий вопрос
-        messages.append({"role": "user", "content": question})
+        messages.append(Messages(role=MessagesRole.USER, content=question))
         
         # Отправляем запрос
         response = llm.chat(messages)
@@ -169,9 +171,7 @@ def ask_legal_advisor(question: str, category: str, chat_history: list, auth_key
 def format_answer_for_display(answer: str) -> str:
     """
     Форматирует ответ для красивого отображения в Streamlit
-    Добавляет переносы строк и эмодзи для читаемости
     """
-    # Убеждаемся, что ответ содержит все разделы
     sections = [
         ("📝 КРАТКИЙ ОТВЕТ", "📝"),
         ("⚖️ ПРИМЕНИМЫЕ ЗАКОНЫ", "⚖️"),
@@ -182,7 +182,6 @@ def format_answer_for_display(answer: str) -> str:
         ("💰 ВОЗМОЖНЫЕ ТРЕБОВАНИЯ", "💰"),
     ]
     
-    # Если ответ не содержит структуру — добавляем предупреждение
     has_structure = any(section[0] in answer.upper() for section in sections)
     
     if not has_structure:
