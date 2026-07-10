@@ -1,5 +1,5 @@
 """
-Модуль генерации юридических документов (претензий, жалоб, заявлений)
+Модуль генерации юридических документов (претензий, жалоб, исков, ходатайств)
 """
 from docx import Document
 from docx.shared import Pt
@@ -17,15 +17,102 @@ def safe_decode(content):
     return content
 
 
-def analyze_chat_for_template(chat_history: list, category: str, auth_key: str) -> dict:
+# === ПРОМТЫ ДЛЯ РАЗНЫХ ТИПОВ ДОКУМЕНТОВ ===
+DOCUMENT_PROMPTS = {
+    "претензия": """Ты — юридический помощник. Создай ПРЕТЕНЗИЮ к контрагенту (продавцу, исполнителю, арендодателю).
+
+ВЕРНИ РЕЗУЛЬТАТ СТРОГО В ТАКОМ ФОРМАТЕ:
+
+ТИП: претензия
+КОМУ: [должность и наименование организации, например: "Генеральному директору ООО 'ТехноМаркет'"]
+ОТ: [если есть ФИО/адрес/телефон — укажи, иначе оставь ПУСТЫМ]
+СИТУАЦИЯ: [ДЕТАЛЬНОЕ описание 4-6 предложений от ПЕРВОГО ЛИЦА "Я приобрёл..."]
+ЗАКОНЫ: [ВСЕ статьи законов из ответа юриста с названиями, через точку с запятой]
+ТРЕБОВАНИЯ: [КОНКРЕТНЫЕ требования с суммами и сроками, нумерованный список]
+ПРИЛОЖЕНИЯ: [КОНКРЕТНЫЙ список документов, нумерованный список]
+
+КРИТИЧЕСКИ ВАЖНО:
+- Претензия адресуется КОНТРАГЕНТУ (продавцу, исполнителю, арендодателю)
+- СИТУАЦИЯ: пиши ОТ ПЕРВОГО ЛИЦА ("Я приобрёл")
+- ТРЕБОВАНИЯ: указывай КОНКРЕТНЫЕ суммы и сроки
+- Не используй markdown""",
+
+    "жалоба": """Ты — юридический помощник. Создай ЖАЛОБУ в государственный орган.
+
+ВЕРНИ РЕЗУЛЬТАТ СТРОГО В ТАКОМ ФОРМАТЕ:
+
+ТИП: жалоба
+КОМУ: [наименование госоргана и должность руководителя, например: "Руководителю Государственной инспекции труда" или "В Роспотребнадзор по г. Москве"]
+ОТ: [если есть ФИО/адрес/телефон — укажи, иначе оставь ПУСТЫМ]
+СИТУАЦИЯ: [ДЕТАЛЬНОЕ описание 4-6 предложений от ПЕРВОГО ЛИЦА "Я работал..."]
+ЗАКОНЫ: [ВСЕ статьи законов из ответа юриста с названиями, через точку с запятой]
+ТРЕБОВАНИЯ: [КОНКРЕТНЫЕ требования к госоргану — ПРОВЕСТИ ПРОВЕРКУ, ПРИНЯТЬ МЕРЫ и т.д., нумерованный список]
+ПРИЛОЖЕНИЯ: [КОНКРЕТНЫЙ список документов, нумерованный список]
+
+КРИТИЧЕСКИ ВАЖНО:
+- Жалоба адресуется В ГОСОРГАН (Роспотребнадзор, ГИТ, Жилинспекция, ГИБДД, Прокуратура)
+- ТРЕБОВАНИЯ: формулируй как "ПРОВЕСТИ ПРОВЕРКУ", "ПРИНЯТЬ МЕРЫ", "ВЫНЕСТИ ПРЕДПИСАНИЕ"
+- СИТУАЦИЯ: пиши ОТ ПЕРВОГО ЛИЦА
+- Не используй markdown""",
+
+    "иск": """Ты — юридический помощник. Создай ИСКОВОЕ ЗАЯВЛЕНИЕ в суд.
+
+ВЕРНИ РЕЗУЛЬТАТ СТРОГО В ТАКОМ ФОРМАТЕ:
+
+ТИП: исковое заявление
+КОМУ: [наименование суда, например: "В Тверской районный суд г. Москвы" или "В мировой суд судебного участка №1"]
+ИСТЕЦ: [ФИО, адрес, телефон, паспортные данные — если есть, иначе оставь ПУСТЫМ]
+ОТВЕТЧИК: [ФИО или наименование организации, адрес — если есть, иначе оставь ПУСТЫМ]
+СИТУАЦИЯ: [ДЕТАЛЬНОЕ описание 5-7 предложений от ПЕРВОГО ЛИЦА с указанием всех фактов]
+ЗАКОНЫ: [ВСЕ статьи законов из ответа юриста с названиями, через точку с запятой]
+ЦЕНА_ИСКА: [сумма иска в рублях с расчётом, например: "80 000 рублей (стоимость товара) + 5 000 рублей (моральный вред) = 85 000 рублей"]
+ТРЕБОВАНИЯ: [КОНКРЕТНЫЕ требования к суду — ПРИНЯТЬ РЕШЕНИЕ, ВЗЫСКАТЬ и т.д., нумерованный список]
+ПРИЛОЖЕНИЯ: [КОНКРЕТНЫЙ список документов + копия иска для ответчика + квитанция о госпошлине, нумерованный список]
+
+КРИТИЧЕСКИ ВАЖНО:
+- Иск адресуется В СУД (районный, мировой, арбитражный)
+- Обязательно укажи ИСТЦА и ОТВЕТЧИКА
+- ЦЕНА_ИСКА: рассчитай общую сумму с обоснованием
+- ТРЕБОВАНИЯ: формулируй как "ПРОШУ СУД: 1. Взыскать... 2. Признать..."
+- В ПРИЛОЖЕНИЯХ обязательно: "Копия искового заявления для ответчика", "Квитанция об уплате госпошлины"
+- Не используй markdown""",
+
+    "ходатайство": """Ты — юридический помощник. Создай ХОДАТАЙСТВО в государственный орган или организацию.
+
+ВЕРНИ РЕЗУЛЬТАТ СТРОГО В ТАКОМ ФОРМАТЕ:
+
+ТИП: ходатайство
+КОМУ: [наименование органа/организации и должность, например: "Начальнику отдела УФМС по г. Москве"]
+ОТ: [если есть ФИО/адрес/телефон — укажи, иначе оставь ПУСТЫМ]
+СИТУАЦИЯ: [ДЕТАЛЬНОЕ описание 3-5 предложений от ПЕРВОГО ЛИЦА]
+ЗАКОНЫ: [ВСЕ статьи законов из ответа юриста с названиями, через точку с запятой]
+ТРЕБОВАНИЯ: [КОНКРЕТНАЯ просьба — ПРЕДОСТАВИТЬ, ПЕРЕНОСТИ, ВЫДАТЬ и т.д., нумерованный список]
+ПРИЛОЖЕНИЯ: [КОНКРЕТНЫЙ список документов, нумерованный список]
+
+КРИТИЧЕСКИ ВАЖНО:
+- Ходатайство — это просьба о совершении действия
+- ТРЕБОВАНИЯ: формулируй как "ПРОШУ: 1. Предоставить... 2. Перенести... 3. Выдать..."
+- СИТУАЦИЯ: пиши ОТ ПЕРВОГО ЛИЦА
+- Не используй markdown"""
+}
+
+
+def analyze_chat_for_template(chat_history: list, category: str, auth_key: str, doc_type: str = "претензия") -> dict:
     """
     Анализирует историю чата и извлекает данные для документа
+    
+    Args:
+        chat_history: история чата
+        category: категория вопроса
+        auth_key: ключ GigaChat
+        doc_type: тип документа (претензия/жалоба/иск/ходатайство)
     """
     try:
-        # Формируем промт с ПРИМЕРАМИ
-        prompt = f"""Ты — юридический помощник. Проанализируй консультацию и создай детальный документ.
-
-КАТЕГОРИЯ: {category}
+        # Выбираем промт по типу документа
+        prompt_template = DOCUMENT_PROMPTS.get(doc_type, DOCUMENT_PROMPTS["претензия"])
+        
+        # Формируем полный промт
+        prompt = f"""КАТЕГОРИЯ: {category}
 
 ИСТОРИЯ ДИАЛОГА:
 """
@@ -35,44 +122,8 @@ def analyze_chat_for_template(chat_history: list, category: str, auth_key: str) 
             else:
                 prompt += f"ОТВЕТ ЮРИСТА: {msg['content']}\n"
         
-        prompt += """
-ЗАДАЧА: Извлеки МАКСИМУМ деталей и создай структуру документа.
-
-ВЕРНИ РЕЗУЛЬТАТ СТРОГО В ТАКОМ ФОРМАТЕ (каждое поле с новой строки):
-
-ТИП: [претензия/жалоба/заявление/иск]
-КОМУ: [конкретное наименование организации]
-ОТ: [если в вопросе есть ФИО/адрес/телефон — укажи, иначе оставь ПУСТЫМ]
-СИТУАЦИЯ: [ДЕТАЛЬНОЕ описание 4-6 предложений от ПЕРВОГО ЛИЦА "Я купил...", используй факты из вопроса]
-ЗАКОНЫ: [ВСЕ статьи законов из ответа юриста с названиями, через точку с запятой]
-ТРЕБОВАНИЯ: [КОНКРЕТНЫЕ требования с суммами и сроками, нумерованный список]
-ПРИЛОЖЕНИЯ: [КОНКРЕТНЫЙ список документов, нумерованный список]
-
-=== ПРИМЕР ПРАВИЛЬНОГО ОТВЕТА ===
-
-ТИП: претензия
-КОМУ: Директору ООО "ТехноМаркет"
-ОТ: 
-СИТУАЦИЯ: 1 июля 2026 года я приобрёл в вашем магазине мобильный телефон iPhone 15 стоимостью 80 000 рублей, что подтверждается кассовым чеком. 8 июля 2026 года телефон перестал включаться. Я обратился в магазин с требованием возврата денежных средств, однако продавец отказался удовлетворить моё требование, предложив обратиться в сервисный центр.
-ЗАКОНЫ: п. 1 ст. 18 Закона РФ "О защите прав потребителей" от 07.02.1992 № 2300-1; ст. 22 того же закона (10 дней на удовлетворение требований); ст. 23 того же закона (неустойка 1% в день); ст. 15 того же закона (компенсация морального вреда)
-ТРЕБОВАНИЯ: 
-1. Вернуть уплаченные денежные средства в размере 80 000 рублей в течение 10 дней
-2. Выплатить неустойку в размере 1% от стоимости товара за каждый день просрочки
-3. Компенсировать моральный вред
-ПРИЛОЖЕНИЯ: 
-1. Копия кассового чека
-2. Копия гарантийного талона
-3. Копия данной претензии с отметкой о вручении
-
-=== КОНЕЦ ПРИМЕРА ===
-
-КРИТИЧЕСКИ ВАЖНО:
-- СИТУАЦИЯ: пиши ОТ ПЕРВОГО ЛИЦА ("Я приобрёл", а НЕ "Клиент приобрёл")
-- ЗАКОНЫ: выпиши ВСЕ статьи из ответа юриста (если упомянуты ст. 18, 22, 13 — укажи ВСЕ)
-- ТРЕБОВАНИЯ: указывай КОНКРЕТНЫЕ суммы и сроки
-- Не используй markdown (**, *, __)
-- Не добавляй пояснений — только поля в указанном формате"""
-
+        prompt += f"\n{prompt_template}"
+        
         with GigaChat(
             credentials=auth_key,
             scope="GIGACHAT_API_PERS",
@@ -82,27 +133,26 @@ def analyze_chat_for_template(chat_history: list, category: str, auth_key: str) 
             response = giga.chat(Chat(messages=messages))
             result_text = safe_decode(response.choices[0].message.content)
         
-        print(f"🔍 Сырой ответ ИИ:\n{result_text}\n")
+        print(f"🔍 Сырой ответ ИИ для типа '{doc_type}':\n{result_text}\n")
         
         # Парсим ответ
-        result = parse_template_text(result_text)
+        result = parse_template_text(result_text, doc_type)
         return result
         
     except Exception as e:
         print(f"❌ Ошибка анализа: {e}")
-        return get_default_template()
+        return get_default_template(doc_type)
 
 
-def parse_template_text(text: str) -> dict:
-    """Парсит текстовый ответ в словарь — улучшенная версия"""
-    result = get_default_template()
+def parse_template_text(text: str, doc_type: str = "претензия") -> dict:
+    """Парсит текстовый ответ в словарь"""
+    result = get_default_template(doc_type)
     
     try:
         lines = text.split('\n')
         current_section = None
         current_content = []
         
-        # Функция для сохранения накопленного содержимого
         def save_section():
             nonlocal current_section, current_content
             if current_section and current_content:
@@ -116,28 +166,41 @@ def parse_template_text(text: str) -> dict:
             if not line_stripped:
                 continue
             
-            # Определяем начало новой секции по ключевым словам
             line_upper = line_stripped.upper()
             
             # ТИП документа
-            if any(x in line_upper for x in ['ТИП:', 'ТИП ДОКУМЕНТА:', 'DOCTYPE:']):
+            if any(x in line_upper for x in ['ТИП:', 'ТИП ДОКУМЕНТА:']):
                 save_section()
                 current_section = 'document_type'
                 content = re.sub(r'^ТИП( ДОКУМЕНТА)?:\s*', '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
             # КОМУ
-            elif any(x in line_upper for x in ['КОМУ:', 'АДРЕСАТ:', 'АДРЕСАТУ:']):
+            elif any(x in line_upper for x in ['КОМУ:', 'АДРЕСАТ:', 'АДРЕСАТУ:', 'В СУД:', 'В:']):
                 save_section()
                 current_section = 'recipient'
-                content = re.sub(r'^(КОМУ|АДРЕСАТ|АДРЕСАТУ):\s*', '', line_stripped, flags=re.IGNORECASE)
+                content = re.sub(r'^(КОМУ|АДРЕСАТ|АДРЕСАТУ|В СУД|В):\s*', '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
-            # ОТ КОГО
-            elif any(x in line_upper for x in ['ОТ:', 'ОТ КОГО:', 'ЗАЯВИТЕЛЬ:', 'ИСТЕЦ:']):
+            # ИСТЕЦ (для иска)
+            elif any(x in line_upper for x in ['ИСТЕЦ:', 'ЗАЯВИТЕЛЬ:']):
                 save_section()
                 current_section = 'sender'
-                content = re.sub(r'^(ОТ( КОГО)?|ЗАЯВИТЕЛЬ|ИСТЕЦ):\s*', '', line_stripped, flags=re.IGNORECASE)
+                content = re.sub(r'^(ИСТЕЦ|ЗАЯВИТЕЛЬ):\s*', '', line_stripped, flags=re.IGNORECASE)
+                current_content = [content]
+            
+            # ОТ КОГО (для других документов)
+            elif any(x in line_upper for x in ['ОТ:', 'ОТ КОГО:']):
+                save_section()
+                current_section = 'sender'
+                content = re.sub(r'^ОТ( КОГО)?:\s*', '', line_stripped, flags=re.IGNORECASE)
+                current_content = [content]
+            
+            # ОТВЕТЧИК (для иска)
+            elif any(x in line_upper for x in ['ОТВЕТЧИК:']):
+                save_section()
+                current_section = 'defendant'
+                content = re.sub(r'^ОТВЕТЧИК:\s*', '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
             # СИТУАЦИЯ
@@ -156,11 +219,18 @@ def parse_template_text(text: str) -> dict:
                                 '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
+            # ЦЕНА ИСКА (для иска)
+            elif any(x in line_upper for x in ['ЦЕНА ИСКА:', 'ЦЕНА_ИСКА:', 'СУММА ИСКА:']):
+                save_section()
+                current_section = 'claim_amount'
+                content = re.sub(r'^(ЦЕНА ИСКА|ЦЕНА_ИСКА|СУММА ИСКА):\s*', '', line_stripped, flags=re.IGNORECASE)
+                current_content = [content]
+            
             # ТРЕБОВАНИЯ
-            elif any(x in line_upper for x in ['ТРЕБОВАНИЯ:', 'ТРЕБУЮ:', 'ПРОШУ:', 'ПРОШУ ПРИНЯТЬ']):
+            elif any(x in line_upper for x in ['ТРЕБОВАНИЯ:', 'ТРЕБУЮ:', 'ПРОШУ:', 'ПРОШУ СУД:', 'ХОДАТАЙСТВУЮ:']):
                 save_section()
                 current_section = 'requirements'
-                content = re.sub(r'^(ТРЕБОВАНИЯ|ТРЕБУЮ|ПРОШУ|ПРОШУ ПРИНЯТЬ):\s*', '', line_stripped, flags=re.IGNORECASE)
+                content = re.sub(r'^(ТРЕБОВАНИЯ|ТРЕБУЮ|ПРОШУ СУД|ПРОШУ|ХОДАТАЙСТВУЮ):\s*', '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
             # ПРИЛОЖЕНИЯ
@@ -177,17 +247,14 @@ def parse_template_text(text: str) -> dict:
         # Сохраняем последнюю секцию
         save_section()
         
-        # Постобработка: очищаем от markdown и лишних символов
+        # Постобработка
         for key in result:
             if result[key]:
-                # Убираем markdown
                 result[key] = result[key].replace('**', '').replace('*', '')
                 result[key] = result[key].replace('__', '').replace('_', '')
-                # Убираем лишние пробелы
                 result[key] = re.sub(r'\s+', ' ', result[key]).strip()
         
-        print(f"✅ Распознанные поля: {list(result.keys())}")
-        print(f"📄 Результат парсинга: {result}")
+        print(f"✅ Распознанные поля для '{doc_type}': {list(result.keys())}")
         
     except Exception as e:
         print(f"❌ Ошибка парсинга: {e}")
@@ -195,20 +262,50 @@ def parse_template_text(text: str) -> dict:
     return result
 
 
-def get_default_template() -> dict:
-    """Возвращает шаблон по умолчанию"""
-    return {
-        "document_type": "ПРЕТЕНЗИЯ",
-        "recipient": "[Наименование организации]",
+def get_default_template(doc_type: str = "претензия") -> dict:
+    """Возвращает шаблон по умолчанию для указанного типа"""
+    base = {
+        "document_type": doc_type.upper(),
+        "recipient": "[Наименование организации/органа]",
         "sender": "[ФИО, адрес, телефон]",
         "situation": "[Описание ситуации]",
         "legal_basis": "[Статьи законов]",
         "requirements": "[Требования]",
-        "attachments": "[Приложения]"
+        "attachments": "[Приложения]",
+        "defendant": "",
+        "claim_amount": ""
     }
+    return base
 
 
-def generate_legal_document(template_data: dict, output_dir: str) -> str:
+def split_into_items(text: str) -> list:
+    """Разбивает текст на пункты по номерам или переводам строк"""
+    if not text:
+        return []
+    
+    lines = []
+    
+    # Сначала пробуем разбить по переводам строк
+    lines_by_newline = [line.strip() for line in text.split('\n') if line.strip()]
+    
+    if len(lines_by_newline) > 1:
+        lines = lines_by_newline
+    else:
+        # Если всё в одной строке — разбиваем по номерам (1., 2., 3.)
+        lines = re.split(r'\s+(?=\d+[\.\)])\s*', text)
+        lines = [line.strip() for line in lines if line.strip()]
+    
+    # Если не получилось — пробуем по точке с запятой
+    if len(lines) <= 1 and ';' in text:
+        lines = [line.strip() for line in text.split(';') if line.strip()]
+    
+    if len(lines) == 0:
+        lines = [text]
+    
+    return lines
+
+
+def generate_legal_document(template_data: dict, output_dir: str, doc_type: str = "претензия") -> str:
     """
     Создаёт Word-документ на основе данных шаблона
     """
@@ -222,25 +319,49 @@ def generate_legal_document(template_data: dict, output_dir: str) -> str:
     # === ШАПКА ===
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    run = p.add_run(template_data.get('recipient', '[Наименование организации]'))
+    run = p.add_run(template_data.get('recipient', '[Наименование]'))
     run.font.size = Pt(11)
     
+    # Для иска — добавляем ОТВЕТЧИКА
+    if doc_type == "иск":
+        defendant = template_data.get('defendant', '').strip()
+        if defendant:
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            run = p.add_run(f"Ответчик: {defendant}")
+            run.font.size = Pt(11)
+    
+    # От кого / Истец
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     sender = template_data.get('sender', '')
-    if sender:
-        run = p.add_run(f"от {sender}")
+    if doc_type == "иск":
+        if sender:
+            run = p.add_run(f"Истец: {sender}")
+        else:
+            run = p.add_run("Истец: ___________________________________\n(ФИО, адрес, телефон, паспорт)")
     else:
-        run = p.add_run("от ___________________________________\n(ФИО, адрес, телефон)")
+        if sender:
+            run = p.add_run(f"от {sender}")
+        else:
+            run = p.add_run("от ___________________________________\n(ФИО, адрес, телефон)")
     run.font.size = Pt(11)
     
     doc.add_paragraph()
     
     # === ЗАГОЛОВОК ===
-    doc_type = template_data.get('document_type', 'ПРЕТЕНЗИЯ').upper()
+    # Определяем название документа по типу
+    doc_titles = {
+        "претензия": "ПРЕТЕНЗИЯ",
+        "жалоба": "ЖАЛОБА",
+        "иск": "ИСКОВОЕ ЗАЯВЛЕНИЕ",
+        "ходатайство": "ХОДАТАЙСТВО"
+    }
+    doc_title = doc_titles.get(doc_type, doc_type.upper())
+    
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = p.add_run(doc_type)
+    run = p.add_run(doc_title)
     run.bold = True
     run.font.size = Pt(14)
     
@@ -254,7 +375,6 @@ def generate_legal_document(template_data: dict, output_dir: str) -> str:
     # === ПРАВОВОЕ ОБОСНОВАНИЕ ===
     legal_basis = template_data.get('legal_basis', '').strip()
     if not legal_basis or legal_basis == '[Статьи законов]':
-        # Если ИИ не заполнил — добавляем универсальный текст
         legal_basis = ("В соответствии с действующим законодательством Российской Федерации, "
                       "а также на основании прав, предоставленных мне нормативными правовыми актами, "
                       "регулирующими данную ситуацию.")
@@ -265,41 +385,43 @@ def generate_legal_document(template_data: dict, output_dir: str) -> str:
     p.add_run(legal_basis)
     doc.add_paragraph()
     
-    # === ТРЕБОВАНИЯ ===
+    # === ЦЕНА ИСКА (только для иска) ===
+    if doc_type == "иск":
+        claim_amount = template_data.get('claim_amount', '').strip()
+        if claim_amount:
+            p = doc.add_paragraph()
+            run = p.add_run("Цена иска: ")
+            run.bold = True
+            p.add_run(claim_amount)
+            doc.add_paragraph()
+    
+    # === ТРЕБОВАНИЯ / ПРОШУ ===
+    # Заголовок зависит от типа документа
+    req_titles = {
+        "претензия": "На основании вышеизложенного ТРЕБУЮ:",
+        "жалоба": "На основании вышеизложенного ПРОШУ:",
+        "иск": "ПРОШУ СУД:",
+        "ходатайство": "На основании вышеизложенного ХОДАТАЙСТВУЮ:"
+    }
+    req_title = req_titles.get(doc_type, "ТРЕБУЮ:")
+    
     p = doc.add_paragraph()
-    run = p.add_run("На основании вышеизложенного ТРЕБУЮ:")
+    run = p.add_run(req_title)
     run.bold = True
     
     requirements = template_data.get('requirements', '').strip()
     if not requirements or requirements == '[Требования]':
         requirements = "Удовлетворить мои законные требования в соответствии с действующим законодательством РФ."
     
-    # === НОВОЕ: Разбиваем по номерам (1., 2., 3.) даже если они в одной строке ===
-    req_lines = []
+    req_lines = split_into_items(requirements)
     
-    # Сначала пробуем разбить по переводам строк
-    lines_by_newline = [line.strip() for line in requirements.split('\n') if line.strip()]
-    
-    # Если получили больше 1 строки — используем их
-    if len(lines_by_newline) > 1:
-        req_lines = lines_by_newline
-    else:
-        # Если всё в одной строке — разбиваем по номерам (1., 2., 3.)
-        # Используем регулярное выражение для поиска номеров
-        req_lines = re.split(r'\s+(?=\d+[\.\)])\s*', requirements)
-        req_lines = [line.strip() for line in req_lines if line.strip()]
-    
-    # Если всё ещё один пункт — добавляем как есть
-    if len(req_lines) == 0:
-        req_lines = [requirements]
-    
-    # Выводим каждый пункт отдельным абзацем
     for i, line in enumerate(req_lines, 1):
-        # Убираем номера, если они есть
         line = re.sub(r'^\d+[\.\)]\s*', '', line)
         if line:
             p = doc.add_paragraph(f"{i}. {line}")
             p.paragraph_format.left_indent = Pt(20)
+    
+    doc.add_paragraph()
     
     # === ПРИЛОЖЕНИЯ ===
     p = doc.add_paragraph()
@@ -308,27 +430,18 @@ def generate_legal_document(template_data: dict, output_dir: str) -> str:
     
     attachments = template_data.get('attachments', '').strip()
     if not attachments or attachments == '[Приложения]':
-        attachments = "1. Копия данной претензии с отметкой о вручении\n2. Копии документов, подтверждающих мои требования"
+        attachments = "1. Копия данного документа\n2. Копии документов, подтверждающих требования"
     
-    # === НОВОЕ: Разбиваем по номерам (1., 2., 3.) даже если они в одной строке ===
-    att_lines = []
+    att_lines = split_into_items(attachments)
     
-    # Сначала пробуем разбить по переводам строк
-    lines_by_newline = [line.strip() for line in attachments.split('\n') if line.strip()]
+    # Для иска — добавляем обязательные приложения, если их нет
+    if doc_type == "иск":
+        att_text = ' '.join(att_lines).lower()
+        if 'госпошлин' not in att_text:
+            att_lines.append("Квитанция об уплате государственной пошлины")
+        if 'копия искового' not in att_text and 'для ответчика' not in att_text:
+            att_lines.append("Копия искового заявления для ответчика")
     
-    # Если получили больше 1 строки — используем их
-    if len(lines_by_newline) > 1:
-        att_lines = lines_by_newline
-    else:
-        # Если всё в одной строке — разбиваем по номерам (1., 2., 3.)
-        att_lines = re.split(r'\s+(?=\d+[\.\)])\s*', attachments)
-        att_lines = [line.strip() for line in att_lines if line.strip()]
-    
-    # Если всё ещё один пункт — добавляем как есть
-    if len(att_lines) == 0:
-        att_lines = [attachments]
-    
-    # Выводим каждый пункт отдельным абзацем
     for i, line in enumerate(att_lines, 1):
         line = re.sub(r'^\d+[\.\)]\s*', '', line)
         if line:
@@ -343,7 +456,7 @@ def generate_legal_document(template_data: dict, output_dir: str) -> str:
     p.add_run("Дата: ___________                    Подпись: ___________")
     
     # === СОХРАНЕНИЕ ===
-    safe_name = re.sub(r'[^\w\-.]', '_', doc_type)
+    safe_name = re.sub(r'[^\w\-.а-яА-Я]', '_', doc_title)
     output_path = Path(output_dir) / f"{safe_name}.docx"
     doc.save(str(output_path))
     
