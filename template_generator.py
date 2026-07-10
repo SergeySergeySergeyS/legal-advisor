@@ -17,12 +17,13 @@ def safe_decode(content):
     return content
 
 
-# === ДОПУСТИМЫЕ ЗАКОНЫ ПО КАТЕГОРИЯМ (для валидации) ===
+# === ДОПУСТИМЫЕ ЗАКОНЫ ПО КАТЕГОРИЯМ ===
 VALID_LAWS_BY_CATEGORY = {
     "🛒 Защита прав потребителей": [
         "о защите прав потребителей", "зозпп", "2300-1",
         "гражданский кодекс", "гк рф",
-        "потребител"
+        "потребител",
+        "налоговый кодекс", "нк рф", "333.36"
     ],
     "🏠 ЖКХ": [
         "жилищный кодекс", "жк рф",
@@ -45,7 +46,7 @@ VALID_LAWS_BY_CATEGORY = {
     ]
 }
 
-# === ЗАПРЕЩЁННЫЕ ЗАКОНЫ ПО КАТЕГОРИЯМ (явные ошибки) ===
+# === ЗАПРЕЩЁННЫЕ ЗАКОНЫ ПО КАТЕГОРИЯМ ===
 INVALID_LAWS_BY_CATEGORY = {
     "🛒 Защита прав потребителей": ["тк рф", "коап", "жилищн"],
     "🏠 ЖКХ": ["о защите прав потребителей", "тк рф", "коап"],
@@ -125,8 +126,8 @@ DOCUMENT_PROMPTS = {
 ОТВЕТЧИК: [ФИО или наименование организации, адрес, ИНН — если не указано, оставь ПУСТЫМ]
 СИТУАЦИЯ: [ДЕТАЛЬНОЕ описание 5-7 предложений от ПЕРВОГО ЛИЦА]
 ЗАКОНЫ: [ВСЕ статьи законов из ответа юриста, через точку с запятой]
-ЦЕНА_ИСКА: [ДЕТАЛЬНЫЙ расчёт цены иска с разбивкой по пунктам]
-ТРЕБОВАНИЯ: [КОНКРЕТНЫЕ требования к суду с СУММАМИ, нумерованный список]
+ЦЕНА_ИСКА: [ДЕТАЛЬНЫЙ расчёт цены иска с разбивкой по пунктам, БЕЗ заголовка "Цена иска:"]
+ТРЕБОВАНИЯ: [КОНКРЕТНЫЕ требования к суду с СУММАМИ, нумерованный список, БЕЗ заголовка "ПРОШУ СУД:"]
 ПРИЛОЖЕНИЯ: [КОНКРЕТНЫЙ список документов, нумерованный список]
 
 === ПРАВИЛА РАСЧЁТА ЦЕНЫ ИСКА ===
@@ -142,9 +143,8 @@ DOCUMENT_PROMPTS = {
 3. МОРАЛЬНЫЙ ВРЕД по ст. 15 ЗоЗПП — обычно 5 000 - 20 000 рублей
 4. СУДЕБНЫЕ РАСХОДЫ — если указаны в вопросе
 
-ПРИМЕР РАСЧЁТА:
-"Цена иска: 
-- Стоимость товара: 80 000 рублей
+ПРИМЕР РАСЧЁТА (в поле ЦЕНА_ИСКА пиши ТОЛЬКО расчёт, БЕЗ заголовка):
+"- Стоимость товара: 80 000 рублей
 - Неустойка по ст. 23 ЗоЗПП (1% × 80 000 руб. × 29 дней просрочки): 23 200 рублей
 - Компенсация морального вреда: 10 000 рублей
 ИТОГО: 113 200 рублей"
@@ -156,23 +156,38 @@ DOCUMENT_PROMPTS = {
 2. Взыскать НЕУСТОЙКУ по ст. 23 ЗоЗПП (с указанием расчёта)
 3. Взыскать компенсацию морального вреда по ст. 15 ЗоЗПП
 4. Взыскать ШТРАФ 50% от присуждённой суммы по ст. 13 п. 6 ЗоЗПП
-5. Взыскать судебные расходы (если есть)
+5. Взыскать судебные расходы (если есть, НО НЕ госпошлину!)
 
-ПРИМЕР ТРЕБОВАНИЙ:
-"ПРОШУ СУД:
-1. Взыскать с ответчика стоимость товара в размере 80 000 рублей
+=== ОСВОБОЖДЕНИЕ ОТ ГОСПОШЛИНЫ ===
+
+ВАЖНО: Согласно ст. 333.36 НК РФ, потребители по искам о защите прав потребителей 
+ОСВОБОЖДАЮТСЯ от уплаты государственной пошлины, если цена иска не превышает 1 000 000 рублей.
+
+Поэтому:
+- НЕ включай в приложения "Квитанция об уплате государственной пошлины"
+- НЕ включай в требования "Взыскать расходы на уплату госпошлины"
+- В правовое обоснование добавь ст. 333.36 НК РФ
+
+ПРИМЕР ТРЕБОВАНИЙ (в поле ТРЕБОВАНИЯ пиши ТОЛЬКО список, БЕЗ заголовка "ПРОШУ СУД:"):
+"1. Взыскать с ответчика стоимость товара в размере 80 000 рублей
 2. Взыскать неустойку по ст. 23 Закона РФ «О защите прав потребителей» в размере 23 200 рублей (1% × 80 000 руб. × 29 дней)
 3. Взыскать компенсацию морального вреда в размере 10 000 рублей
-4. Взыскать штраф в размере 50% от присуждённой суммы на основании п. 6 ст. 13 Закона РФ «О защите прав потребителей»
-5. Взыскать судебные расходы"
+4. Взыскать штраф в размере 50% от присуждённой суммы на основании п. 6 ст. 13 Закона РФ «О защите прав потребителей»"
+
+ПРИМЕР ПРИЛОЖЕНИЙ (БЕЗ квитанции о госпошлине!):
+"1. Копия искового заявления для ответчика
+2. Копия чека
+3. Копия гарантийного талона
+4. Копия претензии с отметкой о вручении
+5. Расчёт цены иска"
 
 ВАЖНО:
 - Иск адресуется В СУД
 - Обязательно укажи ИСТЦА и ОТВЕТЧИКА (если есть данные)
-- ЦЕНА_ИСКА: рассчитай ВСЕ суммы с разбивкой
-- ТРЕБОВАНИЯ: формулируй как "ПРОШУ СУД: 1. Взыскать..." с КОНКРЕТНЫМИ СУММАМИ
-- В ПРИЛОЖЕНИЯХ обязательно: "Копия искового заявления для ответчика", "Квитанция об уплате госпошлины", "Расчёт цены иска"
-- ЗАКОНЫ: используй ТОЛЬКО релевантные статьи
+- ЦЕНА_ИСКА: рассчитай ВСЕ суммы с разбивкой, БЕЗ заголовка "Цена иска:"
+- ТРЕБОВАНИЯ: нумерованный список с КОНКРЕТНЫМИ СУММАМИ, БЕЗ заголовка "ПРОШУ СУД:"
+- В ПРИЛОЖЕНИЯХ НЕ ДОЛЖНО БЫТЬ "Квитанция об уплате государственной пошлины"
+- ЗАКОНЫ: используй ТОЛЬКО релевантные статьи, включая ст. 333.36 НК РФ
 - Не используй markdown""",
 
     "ходатайство": """Ты — юридический помощник. Создай ХОДАТАЙСТВО.
@@ -201,9 +216,7 @@ DOCUMENT_PROMPTS = {
 
 
 def analyze_chat_for_template(chat_history: list, category: str, auth_key: str, doc_type: str = "претензия") -> dict:
-    """
-    Анализирует историю чата и извлекает данные для документа
-    """
+    """Анализирует историю чата и извлекает данные для документа"""
     try:
         prompt_template = DOCUMENT_PROMPTS.get(doc_type, DOCUMENT_PROMPTS["претензия"])
         
@@ -242,10 +255,7 @@ def analyze_chat_for_template(chat_history: list, category: str, auth_key: str, 
         
         print(f"🔍 Сырой ответ ИИ для типа '{doc_type}':\n{result_text}\n")
         
-        # Парсим ответ
         result = parse_template_text(result_text, doc_type)
-        
-        # ВАЛИДАЦИЯ: удаляем нерелевантные законы
         result['legal_basis'] = validate_legal_basis(result.get('legal_basis', ''), category)
         
         return result
@@ -256,27 +266,19 @@ def analyze_chat_for_template(chat_history: list, category: str, auth_key: str, 
 
 
 def validate_legal_basis(legal_basis: str, category: str) -> str:
-    """
-    Проверяет правовое обоснование на соответствие категории.
-    Удаляет нерелевантные законы.
-    """
+    """Проверяет правовое обоснование на соответствие категории"""
     if not legal_basis or legal_basis == '[Статьи законов]':
         return legal_basis
     
     valid_keywords = VALID_LAWS_BY_CATEGORY.get(category, [])
     invalid_keywords = INVALID_LAWS_BY_CATEGORY.get(category, [])
     
-    # Разбиваем на отдельные статьи (по точке с запятой)
     articles = [a.strip() for a in legal_basis.split(';') if a.strip()]
     
     filtered_articles = []
     for article in articles:
         article_lower = article.lower()
-        
-        # Проверяем, есть ли запрещённые ключевые слова
         is_invalid = any(kw in article_lower for kw in invalid_keywords)
-        
-        # Проверяем, есть ли допустимые ключевые слова
         is_valid = any(re.search(kw, article_lower) for kw in valid_keywords) if valid_keywords else True
         
         if not is_invalid:
@@ -315,49 +317,42 @@ def parse_template_text(text: str, doc_type: str = "претензия") -> dict
             
             line_upper = line_stripped.upper()
             
-            # ТИП документа
             if any(x in line_upper for x in ['ТИП:', 'ТИП ДОКУМЕНТА:']):
                 save_section()
                 current_section = 'document_type'
                 content = re.sub(r'^ТИП( ДОКУМЕНТА)?:\s*', '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
-            # КОМУ
             elif any(x in line_upper for x in ['КОМУ:', 'АДРЕСАТ:', 'АДРЕСАТУ:', 'В СУД:', 'В:']):
                 save_section()
                 current_section = 'recipient'
                 content = re.sub(r'^(КОМУ|АДРЕСАТ|АДРЕСАТУ|В СУД|В):\s*', '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
-            # ИСТЕЦ (для иска)
             elif any(x in line_upper for x in ['ИСТЕЦ:', 'ЗАЯВИТЕЛЬ:']):
                 save_section()
                 current_section = 'sender'
                 content = re.sub(r'^(ИСТЕЦ|ЗАЯВИТЕЛЬ):\s*', '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
-            # ОТ КОГО (для других документов)
             elif any(x in line_upper for x in ['ОТ:', 'ОТ КОГО:']):
                 save_section()
                 current_section = 'sender'
                 content = re.sub(r'^ОТ( КОГО)?:\s*', '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
-            # ОТВЕТЧИК (для иска)
             elif any(x in line_upper for x in ['ОТВЕТЧИК:']):
                 save_section()
                 current_section = 'defendant'
                 content = re.sub(r'^ОТВЕТЧИК:\s*', '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
-            # СИТУАЦИЯ
             elif any(x in line_upper for x in ['СИТУАЦИЯ:', 'ОПИСАНИЕ:', 'ФАКТЫ:', 'ОБСТОЯТЕЛЬСТВА:']):
                 save_section()
                 current_section = 'situation'
                 content = re.sub(r'^(СИТУАЦИЯ|ОПИСАНИЕ|ФАКТЫ|ОБСТОЯТЕЛЬСТВА):\s*', '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
-            # ЗАКОНЫ / ПРАВОВОЕ ОБОСНОВАНИЕ
             elif any(x in line_upper for x in ['ЗАКОНЫ:', 'ПРАВОВОЕ ОБОСНОВАНИЕ', 'ПРАВОВАЯ БАЗА', 
                                                 'СТАТЬИ:', 'НОРМАТИВНАЯ БАЗА', 'ОБОСНОВАНИЕ:']):
                 save_section()
@@ -366,35 +361,29 @@ def parse_template_text(text: str, doc_type: str = "претензия") -> dict
                                 '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
-            # ЦЕНА ИСКА (для иска)
             elif any(x in line_upper for x in ['ЦЕНА ИСКА:', 'ЦЕНА_ИСКА:', 'СУММА ИСКА:']):
                 save_section()
                 current_section = 'claim_amount'
                 content = re.sub(r'^(ЦЕНА ИСКА|ЦЕНА_ИСКА|СУММА ИСКА):\s*', '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
-            # ТРЕБОВАНИЯ
             elif any(x in line_upper for x in ['ТРЕБОВАНИЯ:', 'ТРЕБУЮ:', 'ПРОШУ:', 'ПРОШУ СУД:', 'ХОДАТАЙСТВУЮ:']):
                 save_section()
                 current_section = 'requirements'
                 content = re.sub(r'^(ТРЕБОВАНИЯ|ТРЕБУЮ|ПРОШУ СУД|ПРОШУ|ХОДАТАЙСТВУЮ):\s*', '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
-            # ПРИЛОЖЕНИЯ
             elif any(x in line_upper for x in ['ПРИЛОЖЕНИЯ:', 'ПРИЛАГАЮ:', 'ПРИЛОЖЕННЫЕ ДОКУМЕНТЫ']):
                 save_section()
                 current_section = 'attachments'
                 content = re.sub(r'^(ПРИЛОЖЕНИЯ|ПРИЛАГАЮ|ПРИЛОЖЕННЫЕ ДОКУМЕНТЫ):\s*', '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
-            # Если мы внутри секции — добавляем строку
             elif current_section:
                 current_content.append(line_stripped)
         
-        # Сохраняем последнюю секцию
         save_section()
         
-        # Постобработка
         for key in result:
             if result[key]:
                 result[key] = result[key].replace('**', '').replace('*', '')
@@ -429,7 +418,6 @@ def clean_template_hints(text: str) -> str:
     if not text:
         return text
     
-    # Убираем фразы в скобках с подсказками
     text = re.sub(r'\(укажите[^)]*\)', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\(если[^)]*\)', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\(оставь[^)]*\)', '', text, flags=re.IGNORECASE)
@@ -438,40 +426,45 @@ def clean_template_hints(text: str) -> str:
     text = re.sub(r'\(если понесены[^)]*\)', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\(если такие[^)]*\)', '', text, flags=re.IGNORECASE)
     
-    # Убираем лишние пробелы
     text = re.sub(r'\s+', ' ', text).strip()
     
     return text
 
 
+def remove_duplicate_headers(text: str) -> str:
+    """Удаляет дублирующиеся заголовки из текста"""
+    if not text:
+        return text
+    
+    text = re.sub(r'Цена иска:\s*Цена иска:', 'Цена иска:', text, flags=re.IGNORECASE)
+    text = re.sub(r'^\s*ПРОШУ СУД:\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^\s*1\.\s*ПРОШУ СУД:\s*', '', text, flags=re.IGNORECASE)
+    
+    return text
+
+
 def split_into_items(text: str) -> list:
-    """
-    Разбивает текст на пункты по номерам или переводам строк.
-    УЛУЧШЕННАЯ ВЕРСИЯ: объединяет короткие строки и удаляет дубликаты.
-    """
+    """Разбивает текст на пункты. УЛУЧШЕННАЯ ВЕРСИЯ: объединяет короткие строки и удаляет дубликаты."""
     if not text:
         return []
     
-    lines = []
+    text = remove_duplicate_headers(text)
     
-    # Сначала пробуем разбить по переводам строк
+    lines = []
     lines_by_newline = [line.strip() for line in text.split('\n') if line.strip()]
     
     if len(lines_by_newline) > 1:
         lines = lines_by_newline
     else:
-        # Если всё в одной строке — разбиваем по номерам (1., 2., 3.)
         lines = re.split(r'\s+(?=\d+[\.\)])\s*', text)
         lines = [line.strip() for line in lines if line.strip()]
     
-    # Если не получилось — пробуем по точке с запятой
     if len(lines) <= 1 and ';' in text:
         lines = [line.strip() for line in text.split(';') if line.strip()]
     
     if len(lines) == 0:
         lines = [text]
     
-    # === Объединяем короткие строки с предыдущими ===
     merged_lines = []
     for line in lines:
         starts_with_number = re.match(r'^\d+[\.\)]\s*', line)
@@ -483,17 +476,17 @@ def split_into_items(text: str) -> list:
         else:
             merged_lines.append(line)
     
-    # === Удаляем дубликаты ===
     unique_lines = []
     seen = set()
     for line in merged_lines:
-        # Убираем номера и очищаем от подсказок для сравнения
         line_without_number = re.sub(r'^\d+[\.\)]\s*', '', line).strip()
         line_cleaned = clean_template_hints(line_without_number).lower()
         
+        if any(x in line_cleaned for x in ['прошу суд', 'требую', 'прошу', 'ходатайствую']):
+            continue
+        
         if line_cleaned not in seen and line_cleaned:
             seen.add(line_cleaned)
-            # Очищаем от подсказок
             cleaned_line = clean_template_hints(line)
             unique_lines.append(cleaned_line)
     
@@ -501,12 +494,9 @@ def split_into_items(text: str) -> list:
 
 
 def generate_legal_document(template_data: dict, output_dir: str, doc_type: str = "претензия") -> str:
-    """
-    Создаёт Word-документ на основе данных шаблона
-    """
+    """Создаёт Word-документ на основе данных шаблона"""
     doc = Document()
     
-    # === СТИЛИ ===
     style = doc.styles['Normal']
     style.font.name = 'Times New Roman'
     style.font.size = Pt(12)
@@ -521,7 +511,6 @@ def generate_legal_document(template_data: dict, output_dir: str, doc_type: str 
     run = p.add_run(recipient)
     run.font.size = Pt(11)
     
-    # Для иска — добавляем ОТВЕТЧИКА
     if doc_type == "иск":
         defendant = template_data.get('defendant', '').strip()
         defendant = clean_template_hints(defendant)
@@ -533,7 +522,6 @@ def generate_legal_document(template_data: dict, output_dir: str, doc_type: str 
             run = p.add_run(f"Ответчик: {defendant}")
             run.font.size = Pt(11)
     
-    # От кого / Истец
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     sender = template_data.get('sender', '')
@@ -596,6 +584,7 @@ def generate_legal_document(template_data: dict, output_dir: str, doc_type: str 
     if doc_type == "иск":
         claim_amount = template_data.get('claim_amount', '').strip()
         claim_amount = clean_template_hints(claim_amount)
+        claim_amount = remove_duplicate_headers(claim_amount)
         if claim_amount:
             p = doc.add_paragraph()
             run = p.add_run("Цена иска: ")
@@ -603,7 +592,7 @@ def generate_legal_document(template_data: dict, output_dir: str, doc_type: str 
             p.add_run(claim_amount)
             doc.add_paragraph()
     
-    # === ТРЕБОВАНИЯ / ПРОШУ ===
+    # === ТРЕБОВАНИЯ ===
     req_titles = {
         "претензия": "На основании вышеизложенного ТРЕБУЮ:",
         "жалоба": "На основании вышеизложенного ПРОШУ:",
@@ -618,6 +607,7 @@ def generate_legal_document(template_data: dict, output_dir: str, doc_type: str 
     
     requirements = template_data.get('requirements', '').strip()
     requirements = clean_template_hints(requirements)
+    requirements = remove_duplicate_headers(requirements)
     if not requirements or requirements == '[Требования]':
         requirements = "Удовлетворить мои законные требования в соответствии с действующим законодательством РФ."
     
@@ -644,11 +634,12 @@ def generate_legal_document(template_data: dict, output_dir: str, doc_type: str 
     
     att_lines = split_into_items(attachments)
     
-    # Для иска — добавляем обязательные приложения, если их нет
     if doc_type == "иск":
         att_text = ' '.join(att_lines).lower()
-        if 'госпошлин' not in att_text:
-            att_lines.append("Квитанция об уплате государственной пошлины")
+        
+        # === ИСПРАВЛЕНИЕ: НЕ добавляем квитанцию о госпошлине для исков по ЗоЗПП ===
+        # Согласно ст. 333.36 НК РФ, потребители освобождены от госпошлины
+        
         if 'копия искового' not in att_text and 'для ответчика' not in att_text:
             att_lines.append("Копия искового заявления для ответчика")
         if 'расчёт' not in att_text and 'расчет' not in att_text:
