@@ -74,29 +74,103 @@ def analyze_chat_for_template(chat_history: list, category: str, auth_key: str) 
 
 
 def parse_template_text(text: str) -> dict:
-    """Парсит текстовый ответ в словарь"""
+    """Парсит текстовый ответ в словарь — улучшенная версия"""
     result = get_default_template()
     
     try:
         lines = text.split('\n')
+        current_section = None
+        current_content = []
+        
+        # Функция для сохранения накопленного содержимого
+        def save_section():
+            nonlocal current_section, current_content
+            if current_section and current_content:
+                content = '\n'.join(current_content).strip()
+                if content:
+                    result[current_section] = content
+            current_content = []
+        
         for line in lines:
-            line = line.strip()
-            if line.startswith('ТИП:'):
-                result['document_type'] = line.replace('ТИП:', '').strip()
-            elif line.startswith('КОМУ:'):
-                result['recipient'] = line.replace('КОМУ:', '').strip()
-            elif line.startswith('ОТ:'):
-                result['sender'] = line.replace('ОТ:', '').strip()
-            elif line.startswith('СИТУАЦИЯ:'):
-                result['situation'] = line.replace('СИТУАЦИЯ:', '').strip()
-            elif line.startswith('ЗАКОНЫ:'):
-                result['legal_basis'] = line.replace('ЗАКОНЫ:', '').strip()
-            elif line.startswith('ТРЕБОВАНИЯ:'):
-                result['requirements'] = line.replace('ТРЕБОВАНИЯ:', '').strip()
-            elif line.startswith('ПРИЛОЖЕНИЯ:'):
-                result['attachments'] = line.replace('ПРИЛОЖЕНИЯ:', '').strip()
+            line_stripped = line.strip()
+            if not line_stripped:
+                continue
+            
+            # Определяем начало новой секции по ключевым словам
+            line_upper = line_stripped.upper()
+            
+            # ТИП документа
+            if any(x in line_upper for x in ['ТИП:', 'ТИП ДОКУМЕНТА:', 'DOCTYPE:']):
+                save_section()
+                current_section = 'document_type'
+                content = re.sub(r'^ТИП( ДОКУМЕНТА)?:\s*', '', line_stripped, flags=re.IGNORECASE)
+                current_content = [content]
+            
+            # КОМУ
+            elif any(x in line_upper for x in ['КОМУ:', 'АДРЕСАТ:', 'В:', 'АДРЕСАТУ:']):
+                save_section()
+                current_section = 'recipient'
+                content = re.sub(r'^(КОМУ|АДРЕСАТ|В|АДРЕСАТУ):\s*', '', line_stripped, flags=re.IGNORECASE)
+                current_content = [content]
+            
+            # ОТ КОГО
+            elif any(x in line_upper for x in ['ОТ:', 'ОТ КОГО:', 'ЗАЯВИТЕЛЬ:', 'ИСТЕЦ:']):
+                save_section()
+                current_section = 'sender'
+                content = re.sub(r'^(ОТ( КОГО)?|ЗАЯВИТЕЛЬ|ИСТЕЦ):\s*', '', line_stripped, flags=re.IGNORECASE)
+                current_content = [content]
+            
+            # СИТУАЦИЯ
+            elif any(x in line_upper for x in ['СИТУАЦИЯ:', 'ОПИСАНИЕ:', 'ФАКТЫ:', 'ОБСТОЯТЕЛЬСТВА:']):
+                save_section()
+                current_section = 'situation'
+                content = re.sub(r'^(СИТУАЦИЯ|ОПИСАНИЕ|ФАКТЫ|ОБСТОЯТЕЛЬСТВА):\s*', '', line_stripped, flags=re.IGNORECASE)
+                current_content = [content]
+            
+            # ЗАКОНЫ / ПРАВОВОЕ ОБОСНОВАНИЕ
+            elif any(x in line_upper for x in ['ЗАКОНЫ:', 'ПРАВОВОЕ ОБОСНОВАНИЕ', 'ПРАВОВАЯ БАЗА', 
+                                                'СТАТЬИ:', 'НОРМАТИВНАЯ БАЗА', 'ОБОСНОВАНИЕ:']):
+                save_section()
+                current_section = 'legal_basis'
+                content = re.sub(r'^(ЗАКОНЫ|ПРАВОВОЕ ОБОСНОВАНИЕ|ПРАВОВАЯ БАЗА|СТАТЬИ|НОРМАТИВНАЯ БАЗА|ОБОСНОВАНИЕ):\s*', 
+                                '', line_stripped, flags=re.IGNORECASE)
+                current_content = [content]
+            
+            # ТРЕБОВАНИЯ
+            elif any(x in line_upper for x in ['ТРЕБОВАНИЯ:', 'ТРЕБУЮ:', 'ПРОШУ:', 'ПРОШУ ПРИНЯТЬ']):
+                save_section()
+                current_section = 'requirements'
+                content = re.sub(r'^(ТРЕБОВАНИЯ|ТРЕБУЮ|ПРОШУ|ПРОШУ ПРИНЯТЬ):\s*', '', line_stripped, flags=re.IGNORECASE)
+                current_content = [content]
+            
+            # ПРИЛОЖЕНИЯ
+            elif any(x in line_upper for x in ['ПРИЛОЖЕНИЯ:', 'ПРИЛАГАЮ:', 'ПРИЛОЖЕННЫЕ ДОКУМЕНТЫ']):
+                save_section()
+                current_section = 'attachments'
+                content = re.sub(r'^(ПРИЛОЖЕНИЯ|ПРИЛАГАЮ|ПРИЛОЖЕННЫЕ ДОКУМЕНТЫ):\s*', '', line_stripped, flags=re.IGNORECASE)
+                current_content = [content]
+            
+            # Если мы внутри секции — добавляем строку
+            elif current_section:
+                current_content.append(line_stripped)
+        
+        # Сохраняем последнюю секцию
+        save_section()
+        
+        # Постобработка: очищаем от markdown и лишних символов
+        for key in result:
+            if result[key]:
+                # Убираем markdown
+                result[key] = result[key].replace('**', '').replace('*', '')
+                result[key] = result[key].replace('__', '').replace('_', '')
+                # Убираем лишние пробелы
+                result[key] = re.sub(r'\s+', ' ', result[key]).strip()
+        
+        print(f"✅ Распознанные поля: {list(result.keys())}")
+        print(f"📄 Результат парсинга: {result}")
+        
     except Exception as e:
-        print(f"Ошибка парсинга: {e}")
+        print(f"❌ Ошибка парсинга: {e}")
     
     return result
 
