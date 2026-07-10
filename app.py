@@ -26,6 +26,14 @@ CATEGORIES = [
     "🚗 Споры с ГИБДД",
 ]
 
+# === ТИПЫ ДОКУМЕНТОВ ===
+DOC_TYPES = {
+    "претензия": "📄 Претензия",
+    "жалоба": "📄 Жалоба",
+    "иск": "📄 Исковое заявление",
+    "ходатайство": "📄 Ходатайство"
+}
+
 # === ЛИМИТЫ ТАРИФОВ ===
 FREE_LIMIT = 999
 
@@ -59,7 +67,7 @@ st.title("🎓 Юридический консультант")
 st.markdown("""
 **Ваш персональный ИИ-юрист — отвечает на вопросы простым языком, со ссылками на законы и пошаговыми инструкциями**
 
-💬 Задайте вопрос → 🤖 Получите консультацию → 📄 Скачайте шаблон документа
+💬 Задайте вопрос → 🤖 Получите консультацию → 📄 Скачайте готовый документ
 """)
 
 
@@ -127,7 +135,11 @@ with st.sidebar:
     🤖 GigaChat (Сбер)
     ⚖️ Ссылки на статьи законов
     📋 Пошаговые инструкции
-    📄 Генератор документов
+    📄 4 типа документов:
+       • Претензия
+       • Жалоба
+       • Исковое заявление
+       • Ходатайство
     """)
     
     st.markdown("---")
@@ -152,7 +164,13 @@ if not st.session_state.messages:
             <li>⏰ Важные сроки</li>
             <li>💰 Возможные требования</li>
         </ul>
-        <p><b>После консультации вы сможете скачать готовый документ!</b></p>
+        <p><b>После консультации вы сможете скачать готовый документ:</b></p>
+        <ul>
+            <li>📄 <b>Претензия</b> — контрагенту (продавцу, исполнителю)</li>
+            <li>📄 <b>Жалоба</b> — в госорган (Роспотребнадзор, ГИТ, ГИБДД)</li>
+            <li>📄 <b>Исковое заявление</b> — в суд</li>
+            <li>📄 <b>Ходатайство</b> — в различные инстанции</li>
+        </ul>
         <p><b>Напишите ваш вопрос ниже 👇</b></p>
     </div>
     """, unsafe_allow_html=True)
@@ -162,71 +180,56 @@ for i, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
         
-        # Кнопка скачивания документа ПОСЛЕ каждого ответа ИИ
+        # Кнопки скачивания документов ПОСЛЕ каждого ответа ИИ
         if message["role"] == "assistant":
-            doc_key = f"doc_{i}"
+            st.markdown("---")
+            st.markdown("**📄 Выберите тип документа для скачивания:**")
             
-            # Если документ уже сгенерирован — показываем кнопку скачивания
-            if doc_key in st.session_state.generated_docs:
-                doc_data = st.session_state.generated_docs[doc_key]
-                st.download_button(
-                    label=f"💾 Скачать {doc_data['filename']}",
-                    data=doc_data['data'],
-                    file_name=doc_data['filename'],
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    key=f"dl_{i}",
-                    use_container_width=True
-                )
-            else:
-                # Кнопка генерации документа
-                if st.button("📄 Скачать готовую претензию", key=f"btn_{i}", use_container_width=True):
-                    with st.spinner("📝 Формирую документ на основе консультации..."):
-                        try:
-                            # Берём историю до этого ответа
-                            history_for_doc = st.session_state.messages[:i+1]
-                            
-                            # Анализируем чат
-                            template_data = template_generator.analyze_chat_for_template(
-                                chat_history=history_for_doc,
-                                category=st.session_state.selected_category,
-                                auth_key=auth_key
-                            )
-                            
-                            # Создаём документ во временной папке
-                            with tempfile.TemporaryDirectory() as temp_dir:
-                                doc_path = template_generator.generate_legal_document(
-                                    template_data=template_data,
-                                    output_dir=temp_dir
-                                )
-                                
-                                # Читаем файл
-                                with open(doc_path, 'rb') as f:
-                                    doc_bytes = f.read()
-                                
-                                # Сохраняем в session_state
-                                doc_type = template_data.get('document_type', 'документ').upper()
-                                st.session_state.generated_docs[doc_key] = {
-                                    'data': doc_bytes,
-                                    'filename': f"{doc_type}.docx"
-                                }
-                                
-                                st.success(f"✅ Документ '{doc_type}' готов!")
-                                st.rerun()
-                                
-                        except Exception as e:
-                            st.error(f"❌ Ошибка создания документа: {e}")
+            # 4 кнопки в ряд
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                btn_key = f"btn_pret_{i}"
+                if st.button("📄 Претензия", key=btn_key, use_container_width=True):
+                    _generate_and_store_doc(i, "претензия", auth_key)
+            
+            with col2:
+                btn_key = f"btn_zhal_{i}"
+                if st.button("📄 Жалоба", key=btn_key, use_container_width=True):
+                    _generate_and_store_doc(i, "жалоба", auth_key)
+            
+            with col3:
+                btn_key = f"btn_isk_{i}"
+                if st.button("📄 Иск", key=btn_key, use_container_width=True):
+                    _generate_and_store_doc(i, "иск", auth_key)
+            
+            with col4:
+                btn_key = f"btn_hod_{i}"
+                if st.button("📄 Ходатайство", key=btn_key, use_container_width=True):
+                    _generate_and_store_doc(i, "ходатайство", auth_key)
+            
+            # Показываем кнопки скачивания для сгенерированных документов
+            for doc_type in ["претензия", "жалоба", "иск", "ходатайство"]:
+                doc_key = f"doc_{doc_type}_{i}"
+                if doc_key in st.session_state.generated_docs:
+                    doc_data = st.session_state.generated_docs[doc_key]
+                    st.download_button(
+                        label=f"💾 Скачать {doc_data['filename']}",
+                        data=doc_data['data'],
+                        file_name=doc_data['filename'],
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        key=f"dl_{doc_type}_{i}",
+                        use_container_width=True
+                    )
 
 # === ПОЛЕ ВВОДА ===
 if prompt := st.chat_input("💬 Напишите ваш юридический вопрос..."):
-    # Проверка лимита
     if st.session_state.questions_today >= FREE_LIMIT:
         st.error("⚠️ Лимит исчерпан! Возвращайтесь завтра.")
         st.stop()
     
-    # Сообщение пользователя
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Ответ ИИ
     with st.spinner("🤖 Консультируюсь с законами..."):
         chat_history = [
             {"role": msg["role"], "content": msg["content"]}
@@ -244,8 +247,46 @@ if prompt := st.chat_input("💬 Напишите ваш юридический 
         st.session_state.messages.append({"role": "assistant", "content": formatted_answer})
         st.session_state.questions_today += 1
     
-    # Перезагружаем страницу, чтобы появилась кнопка скачивания
     st.rerun()
+
+
+# === ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ГЕНЕРАЦИИ ДОКУМЕНТА ===
+def _generate_and_store_doc(message_index: int, doc_type: str, auth_key: str):
+    """Генерирует документ и сохраняет его в session_state"""
+    doc_key = f"doc_{doc_type}_{message_index}"
+    
+    with st.spinner(f"📝 Формирую {doc_type}..."):
+        try:
+            history_for_doc = st.session_state.messages[:message_index+1]
+            
+            template_data = template_generator.analyze_chat_for_template(
+                chat_history=history_for_doc,
+                category=st.session_state.selected_category,
+                auth_key=auth_key,
+                doc_type=doc_type
+            )
+            
+            with tempfile.TemporaryDirectory() as temp_dir:
+                doc_path = template_generator.generate_legal_document(
+                    template_data=template_data,
+                    output_dir=temp_dir,
+                    doc_type=doc_type
+                )
+                
+                with open(doc_path, 'rb') as f:
+                    doc_bytes = f.read()
+                
+                doc_type_upper = template_data.get('document_type', doc_type).upper()
+                st.session_state.generated_docs[doc_key] = {
+                    'data': doc_bytes,
+                    'filename': f"{doc_type_upper}.docx"
+                }
+                
+                st.success(f"✅ Документ '{doc_type_upper}' готов!")
+                st.rerun()
+                
+        except Exception as e:
+            st.error(f"❌ Ошибка создания документа: {e}")
 
 
 # === ПОДВАЛ ===
