@@ -62,6 +62,48 @@ if st.session_state.last_reset_date != today:
     st.session_state.last_reset_date = today
 
 
+# ============================================================
+# ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ГЕНЕРАЦИИ ДОКУМЕНТА
+# (ОПРЕДЕЛЕНА ЗДЕСЬ, ЧТОБЫ БЫЛА ДОСТУПНА НИЖЕ)
+# ============================================================
+def _generate_and_store_doc(message_index: int, doc_type: str, auth_key: str):
+    """Генерирует документ и сохраняет его в session_state"""
+    doc_key = f"doc_{doc_type}_{message_index}"
+    
+    with st.spinner(f"📝 Формирую {doc_type}..."):
+        try:
+            history_for_doc = st.session_state.messages[:message_index+1]
+            
+            template_data = template_generator.analyze_chat_for_template(
+                chat_history=history_for_doc,
+                category=st.session_state.selected_category,
+                auth_key=auth_key,
+                doc_type=doc_type
+            )
+            
+            with tempfile.TemporaryDirectory() as temp_dir:
+                doc_path = template_generator.generate_legal_document(
+                    template_data=template_data,
+                    output_dir=temp_dir,
+                    doc_type=doc_type
+                )
+                
+                with open(doc_path, 'rb') as f:
+                    doc_bytes = f.read()
+                
+                doc_type_upper = template_data.get('document_type', doc_type).upper()
+                st.session_state.generated_docs[doc_key] = {
+                    'data': doc_bytes,
+                    'filename': f"{doc_type_upper}.docx"
+                }
+                
+                st.success(f"✅ Документ '{doc_type_upper}' готов!")
+                st.rerun()
+                
+        except Exception as e:
+            st.error(f"❌ Ошибка создания документа: {e}")
+
+
 # === ЗАГОЛОВОК ===
 st.title("🎓 Юридический консультант")
 st.markdown("""
@@ -248,45 +290,6 @@ if prompt := st.chat_input("💬 Напишите ваш юридический 
         st.session_state.questions_today += 1
     
     st.rerun()
-
-
-# === ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ГЕНЕРАЦИИ ДОКУМЕНТА ===
-def _generate_and_store_doc(message_index: int, doc_type: str, auth_key: str):
-    """Генерирует документ и сохраняет его в session_state"""
-    doc_key = f"doc_{doc_type}_{message_index}"
-    
-    with st.spinner(f"📝 Формирую {doc_type}..."):
-        try:
-            history_for_doc = st.session_state.messages[:message_index+1]
-            
-            template_data = template_generator.analyze_chat_for_template(
-                chat_history=history_for_doc,
-                category=st.session_state.selected_category,
-                auth_key=auth_key,
-                doc_type=doc_type
-            )
-            
-            with tempfile.TemporaryDirectory() as temp_dir:
-                doc_path = template_generator.generate_legal_document(
-                    template_data=template_data,
-                    output_dir=temp_dir,
-                    doc_type=doc_type
-                )
-                
-                with open(doc_path, 'rb') as f:
-                    doc_bytes = f.read()
-                
-                doc_type_upper = template_data.get('document_type', doc_type).upper()
-                st.session_state.generated_docs[doc_key] = {
-                    'data': doc_bytes,
-                    'filename': f"{doc_type_upper}.docx"
-                }
-                
-                st.success(f"✅ Документ '{doc_type_upper}' готов!")
-                st.rerun()
-                
-        except Exception as e:
-            st.error(f"❌ Ошибка создания документа: {e}")
 
 
 # === ПОДВАЛ ===
