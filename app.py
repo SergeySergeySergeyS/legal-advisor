@@ -43,6 +43,9 @@ if "last_reset_date" not in st.session_state:
 if "selected_category" not in st.session_state:
     st.session_state.selected_category = CATEGORIES[0]
 
+if "generated_docs" not in st.session_state:
+    st.session_state.generated_docs = {}
+
 
 # === СБРОС СЧЁТЧИКА ===
 today = datetime.now().date()
@@ -114,6 +117,7 @@ with st.sidebar:
     st.markdown("### 🗑️ Управление чатом")
     if st.button("🗑️ Очистить историю", use_container_width=True):
         st.session_state.messages = []
+        st.session_state.generated_docs = {}
         st.rerun()
     
     st.markdown("---")
@@ -160,53 +164,57 @@ for i, message in enumerate(st.session_state.messages):
         
         # Кнопка скачивания документа ПОСЛЕ каждого ответа ИИ
         if message["role"] == "assistant":
-            button_key = f"doc_btn_{i}"
-            download_key = f"doc_download_{i}"
+            doc_key = f"doc_{i}"
             
-            if st.button("📄 Скачать готовую претензию", key=button_key):
-                with st.spinner("📝 Формирую документ..."):
-                    try:
-                        # Берём историю до этого ответа
-                        history_for_doc = st.session_state.messages[:i+1]
-                        
-                        # Анализируем чат
-                        template_data = template_generator.analyze_chat_for_template(
-                            chat_history=history_for_doc,
-                            category=st.session_state.selected_category,
-                            auth_key=auth_key
-                        )
-                        
-                        # Создаём документ во временной папке
-                        with tempfile.TemporaryDirectory() as temp_dir:
-                            doc_path = template_generator.generate_legal_document(
-                                template_data=template_data,
-                                output_dir=temp_dir
-                            )
-                            
-                            # Читаем файл
-                            with open(doc_path, 'rb') as f:
-                                doc_bytes = f.read()
-                            
-                            # Сохраняем в session_state для кнопки скачивания
-                            st.session_state[download_key] = {
-                                'data': doc_bytes,
-                                'filename': f"{template_data.get('document_type', 'документ')}.docx"
-                            }
-                            st.rerun()
-                            
-                    except Exception as e:
-                        st.error(f"❌ Ошибка создания документа: {e}")
-            
-            # Кнопка скачивания (появляется после генерации)
-            if download_key in st.session_state:
+            # Если документ уже сгенерирован — показываем кнопку скачивания
+            if doc_key in st.session_state.generated_docs:
+                doc_data = st.session_state.generated_docs[doc_key]
                 st.download_button(
-                    label="💾 Скачать документ",
-                    data=st.session_state[download_key]['data'],
-                    file_name=st.session_state[download_key]['filename'],
+                    label=f"💾 Скачать {doc_data['filename']}",
+                    data=doc_data['data'],
+                    file_name=doc_data['filename'],
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     key=f"dl_{i}",
                     use_container_width=True
                 )
+            else:
+                # Кнопка генерации документа
+                if st.button("📄 Скачать готовую претензию", key=f"btn_{i}", use_container_width=True):
+                    with st.spinner("📝 Формирую документ на основе консультации..."):
+                        try:
+                            # Берём историю до этого ответа
+                            history_for_doc = st.session_state.messages[:i+1]
+                            
+                            # Анализируем чат
+                            template_data = template_generator.analyze_chat_for_template(
+                                chat_history=history_for_doc,
+                                category=st.session_state.selected_category,
+                                auth_key=auth_key
+                            )
+                            
+                            # Создаём документ во временной папке
+                            with tempfile.TemporaryDirectory() as temp_dir:
+                                doc_path = template_generator.generate_legal_document(
+                                    template_data=template_data,
+                                    output_dir=temp_dir
+                                )
+                                
+                                # Читаем файл
+                                with open(doc_path, 'rb') as f:
+                                    doc_bytes = f.read()
+                                
+                                # Сохраняем в session_state
+                                doc_type = template_data.get('document_type', 'документ').upper()
+                                st.session_state.generated_docs[doc_key] = {
+                                    'data': doc_bytes,
+                                    'filename': f"{doc_type}.docx"
+                                }
+                                
+                                st.success(f"✅ Документ '{doc_type}' готов!")
+                                st.rerun()
+                                
+                        except Exception as e:
+                            st.error(f"❌ Ошибка создания документа: {e}")
 
 # === ПОЛЕ ВВОДА ===
 if prompt := st.chat_input("💬 Напишите ваш юридический вопрос..."):
@@ -217,29 +225,27 @@ if prompt := st.chat_input("💬 Напишите ваш юридический 
     
     # Сообщение пользователя
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
     
     # Ответ ИИ
-    with st.chat_message("assistant"):
-        with st.spinner("🤖 Консультируюсь с законами..."):
-            chat_history = [
-                {"role": msg["role"], "content": msg["content"]}
-                for msg in st.session_state.messages[:-1]
-            ]
-            
-            answer = legal_advisor.ask_legal_advisor(
-                question=prompt,
-                category=st.session_state.selected_category,
-                chat_history=chat_history,
-                auth_key=auth_key
-            )
-            
-            formatted_answer = legal_advisor.format_answer_for_display(answer)
-            st.markdown(formatted_answer)
-            
-            st.session_state.messages.append({"role": "assistant", "content": formatted_answer})
-            st.session_state.questions_today += 1
+    with st.spinner("🤖 Консультируюсь с законами..."):
+        chat_history = [
+            {"role": msg["role"], "content": msg["content"]}
+            for msg in st.session_state.messages[:-1]
+        ]
+        
+        answer = legal_advisor.ask_legal_advisor(
+            question=prompt,
+            category=st.session_state.selected_category,
+            chat_history=chat_history,
+            auth_key=auth_key
+        )
+        
+        formatted_answer = legal_advisor.format_answer_for_display(answer)
+        st.session_state.messages.append({"role": "assistant", "content": formatted_answer})
+        st.session_state.questions_today += 1
+    
+    # Перезагружаем страницу, чтобы появилась кнопка скачивания
+    st.rerun()
 
 
 # === ПОДВАЛ ===
