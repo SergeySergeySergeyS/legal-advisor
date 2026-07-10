@@ -274,26 +274,20 @@ def generate_legal_document(template_data: dict, output_dir: str) -> str:
     if not requirements or requirements == '[Требования]':
         requirements = "Удовлетворить мои законные требования в соответствии с действующим законодательством РФ."
     
-    # Разбиваем требования по пунктам (ищем цифры в начале строки)
+    # === НОВОЕ: Разбиваем по номерам (1., 2., 3.) даже если они в одной строке ===
     req_lines = []
-    current_line = ""
-    for line in requirements.split('\n'):
-        line = line.strip()
-        if not line:
-            continue
-        # Если строка начинается с цифры — это новый пункт
-        if re.match(r'^\d+[\.\)]\s*', line):
-            if current_line:
-                req_lines.append(current_line.strip())
-            current_line = re.sub(r'^\d+[\.\)]\s*', '', line)
-        else:
-            current_line += " " + line
-    if current_line:
-        req_lines.append(current_line.strip())
     
-    # Если не получилось разбить — пробуем разбить по точке с запятой
-    if len(req_lines) <= 1 and ';' in requirements:
-        req_lines = [line.strip() for line in requirements.split(';') if line.strip()]
+    # Сначала пробуем разбить по переводам строк
+    lines_by_newline = [line.strip() for line in requirements.split('\n') if line.strip()]
+    
+    # Если получили больше 1 строки — используем их
+    if len(lines_by_newline) > 1:
+        req_lines = lines_by_newline
+    else:
+        # Если всё в одной строке — разбиваем по номерам (1., 2., 3.)
+        # Используем регулярное выражение для поиска номеров
+        req_lines = re.split(r'\s+(?=\d+[\.\)])\s*', requirements)
+        req_lines = [line.strip() for line in req_lines if line.strip()]
     
     # Если всё ещё один пункт — добавляем как есть
     if len(req_lines) == 0:
@@ -307,8 +301,6 @@ def generate_legal_document(template_data: dict, output_dir: str) -> str:
             p = doc.add_paragraph(f"{i}. {line}")
             p.paragraph_format.left_indent = Pt(20)
     
-    doc.add_paragraph()
-    
     # === ПРИЛОЖЕНИЯ ===
     p = doc.add_paragraph()
     run = p.add_run("Приложения:")
@@ -318,26 +310,19 @@ def generate_legal_document(template_data: dict, output_dir: str) -> str:
     if not attachments or attachments == '[Приложения]':
         attachments = "1. Копия данной претензии с отметкой о вручении\n2. Копии документов, подтверждающих мои требования"
     
-    # Разбиваем приложения по пунктам
+    # === НОВОЕ: Разбиваем по номерам (1., 2., 3.) даже если они в одной строке ===
     att_lines = []
-    current_line = ""
-    for line in attachments.split('\n'):
-        line = line.strip()
-        if not line:
-            continue
-        # Если строка начинается с цифры — это новый пункт
-        if re.match(r'^\d+[\.\)]\s*', line):
-            if current_line:
-                att_lines.append(current_line.strip())
-            current_line = re.sub(r'^\d+[\.\)]\s*', '', line)
-        else:
-            current_line += " " + line
-    if current_line:
-        att_lines.append(current_line.strip())
     
-    # Если не получилось разбить — пробуем разбить по точке с запятой
-    if len(att_lines) <= 1 and ';' in attachments:
-        att_lines = [line.strip() for line in attachments.split(';') if line.strip()]
+    # Сначала пробуем разбить по переводам строк
+    lines_by_newline = [line.strip() for line in attachments.split('\n') if line.strip()]
+    
+    # Если получили больше 1 строки — используем их
+    if len(lines_by_newline) > 1:
+        att_lines = lines_by_newline
+    else:
+        # Если всё в одной строке — разбиваем по номерам (1., 2., 3.)
+        att_lines = re.split(r'\s+(?=\d+[\.\)])\s*', attachments)
+        att_lines = [line.strip() for line in att_lines if line.strip()]
     
     # Если всё ещё один пункт — добавляем как есть
     if len(att_lines) == 0:
