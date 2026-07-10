@@ -24,7 +24,7 @@ CATEGORIES = [
 ]
 
 # === ЛИМИТЫ ТАРИФОВ ===
-   FREE_LIMIT = 999  # вопросов в день (временно для тестирования)
+FREE_LIMIT = 999  # вопросов в день (временно для тестирования)
 
 
 # === ИНИЦИАЛИЗАЦИЯ SESSION STATE ===
@@ -183,7 +183,7 @@ if prompt := st.chat_input("💬 Напишите ваш юридический 
             # Формируем историю для контекста
             chat_history = [
                 {"role": msg["role"], "content": msg["content"]}
-                for msg in st.session_state.messages[:-1]  # без текущего вопроса
+                for msg in st.session_state.messages[:-1]
             ]
             
             # Запрашиваем ответ у ИИ
