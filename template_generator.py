@@ -252,17 +252,23 @@ def generate_legal_document(template_data: dict, output_dir: str) -> str:
     doc.add_paragraph()
     
     # === ПРАВОВОЕ ОБОСНОВАНИЕ ===
-    legal_basis = template_data.get('legal_basis', '[Статьи законов]')
+    legal_basis = template_data.get('legal_basis', '').strip()
+    if not legal_basis or legal_basis == '[Статьи законов]':
+        # Если ИИ не заполнил — добавляем универсальный текст
+        legal_basis = ("В соответствии с действующим законодательством Российской Федерации, "
+                      "а также на основании прав, предоставленных мне нормативными правовыми актами, "
+                      "регулирующими данную ситуацию.")
+    
     p = doc.add_paragraph()
     run = p.add_run("Правовое обоснование: ")
     run.bold = True
     p.add_run(legal_basis)
     doc.add_paragraph()
     
-    # === ТРЕБОВАНИЯ ===
-    p = doc.add_paragraph()
-    run = p.add_run("На основании вышеизложенного ТРЕБУЮ:")
-    run.bold = True
+    requirements = template_data.get('requirements', '').strip()
+    if not requirements or requirements == '[Требования]':
+        requirements = "Удовлетворить мои законные требования в соответствии с действующим законодательством РФ."
+    req_lines = [line.strip() for line in requirements.split('\n') if line.strip()]
     
     requirements = template_data.get('requirements', '[Требования]')
     req_lines = [line.strip() for line in requirements.split('\n') if line.strip()]
@@ -274,10 +280,10 @@ def generate_legal_document(template_data: dict, output_dir: str) -> str:
     
     doc.add_paragraph()
     
-    # === ПРИЛОЖЕНИЯ ===
-    p = doc.add_paragraph()
-    run = p.add_run("Приложения:")
-    run.bold = True
+    attachments = template_data.get('attachments', '').strip()
+    if not attachments or attachments == '[Приложения]':
+        attachments = "1. Копия данной претензии с отметкой о вручении\n2. Копии документов, подтверждающих мои требования"
+    att_lines = [line.strip() for line in attachments.split('\n') if line.strip()]
     
     attachments = template_data.get('attachments', '[Приложения]')
     att_lines = [line.strip() for line in attachments.split('\n') if line.strip()]
