@@ -4,6 +4,8 @@
 """
 import streamlit as st
 from datetime import datetime
+import tempfile
+from pathlib import Path
 import legal_advisor
 import template_generator
 
@@ -25,7 +27,7 @@ CATEGORIES = [
 ]
 
 # === ЛИМИТЫ ТАРИФОВ ===
-FREE_LIMIT = 999  # вопросов в день (временно для тестирования)
+FREE_LIMIT = 999
 
 
 # === ИНИЦИАЛИЗАЦИЯ SESSION STATE ===
@@ -42,7 +44,7 @@ if "selected_category" not in st.session_state:
     st.session_state.selected_category = CATEGORIES[0]
 
 
-# === СБРОС СЧЁТЧИКА В НАЧАЛЕ НОВОГО ДНЯ ===
+# === СБРОС СЧЁТЧИКА ===
 today = datetime.now().date()
 if st.session_state.last_reset_date != today:
     st.session_state.questions_today = 0
@@ -62,7 +64,7 @@ st.markdown("""
 with st.sidebar:
     st.header("⚙️ Настройки")
     
-    # === ПОЛУЧЕНИЕ КЛЮЧА GIGACHAT ===
+    # === КЛЮЧ GIGACHAT ===
     try:
         auth_key = st.secrets.get("AUTH_KEY", "")
     except Exception:
@@ -86,7 +88,7 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # === ВЫБОР КАТЕГОРИИ ===
+    # === КАТЕГОРИЯ ===
     st.markdown("### 📋 Категория вопроса")
     selected_category = st.selectbox(
         "Выберите тему:",
@@ -97,18 +99,18 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # === СЧЁТЧИК ЗАПРОСОВ ===
+    # === СЧЁТЧИК ===
     st.markdown("### 📊 Ваш тариф")
     remaining = max(0, FREE_LIMIT - st.session_state.questions_today)
     
     if remaining > 0:
         st.info(f"🆓 **Free-тариф**\n\nОсталось вопросов сегодня: **{remaining}** из {FREE_LIMIT}")
     else:
-        st.warning(f"⚠️ **Лимит Free-тарифа исчерпан**\n\nВозвращайтесь завтра или оформите Premium 💎")
+        st.warning(f"⚠️ **Лимит исчерпан**\n\nВозвращайтесь завтра")
     
     st.markdown("---")
     
-    # === УПРАВЛЕНИЕ ЧАТОМ ===
+    # === УПРАВЛЕНИЕ ===
     st.markdown("### 🗑️ Управление чатом")
     if st.button("🗑️ Очистить историю", use_container_width=True):
         st.session_state.messages = []
@@ -116,78 +118,116 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # === ИНФОРМАЦИЯ ===
     st.markdown("### ℹ️ О сервисе")
     st.markdown("""
-    🤖 Работает на базе GigaChat (Сбер)
-    
-    ⚖️ Ссылается на конкретные статьи законов
-    
-    📋 Даёт пошаговые инструкции
-    
-    📄 Генерирует шаблоны документов
+    🤖 GigaChat (Сбер)
+    ⚖️ Ссылки на статьи законов
+    📋 Пошаговые инструкции
+    📄 Генератор документов
     """)
     
     st.markdown("---")
     st.markdown(f"📅 **Сегодня:** {datetime.now().strftime('%d.%m.%Y')}")
 
 
-# === ОСНОВНАЯ ОБЛАСТЬ — ЧАТ ===
+# === ОСНОВНАЯ ОБЛАСТЬ ===
 
-# Приветственное сообщение, если чат пустой
+# Приветствие
 if not st.session_state.messages:
     st.markdown(f"""
     <div style='background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin-bottom: 20px;'>
         <h3>👋 Здравствуйте! Я ваш ИИ-юрист.</h3>
         <p>Сейчас выбрана категория: <b>{selected_category}</b></p>
-        <p>Опишите вашу ситуацию, и я помогу разобраться в правовых вопросах:</p>
+        <p>Опишите вашу ситуацию, и я помогу разобраться:</p>
         <ul>
-            <li>📝 Дам краткий ответ на вашу ситуацию</li>
-            <li>⚖️ Сошлюсь на конкретные статьи законов</li>
-            <li>📋 Составлю пошаговую инструкцию</li>
-            <li>📄 Подскажу, какие документы нужны</li>
-            <li>🏛️ Расскажу, куда обращаться</li>
-            <li>⏰ Укажу важные сроки</li>
+            <li>📝 Краткий ответ</li>
+            <li>⚖️ Применимые законы</li>
+            <li>📋 Пошаговая инструкция</li>
+            <li>📄 Необходимые документы</li>
+            <li>🏛️ Куда обращаться</li>
+            <li>⏰ Важные сроки</li>
+            <li>💰 Возможные требования</li>
         </ul>
+        <p><b>После консультации вы сможете скачать готовый документ!</b></p>
         <p><b>Напишите ваш вопрос ниже 👇</b></p>
     </div>
     """, unsafe_allow_html=True)
 
-# Отображаем историю чата
-for message in st.session_state.messages:
+# История чата
+for i, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+        
+        # Кнопка скачивания документа ПОСЛЕ каждого ответа ИИ
+        if message["role"] == "assistant":
+            button_key = f"doc_btn_{i}"
+            download_key = f"doc_download_{i}"
+            
+            if st.button("📄 Скачать готовую претензию", key=button_key):
+                with st.spinner("📝 Формирую документ..."):
+                    try:
+                        # Берём историю до этого ответа
+                        history_for_doc = st.session_state.messages[:i+1]
+                        
+                        # Анализируем чат
+                        template_data = template_generator.analyze_chat_for_template(
+                            chat_history=history_for_doc,
+                            category=st.session_state.selected_category,
+                            auth_key=auth_key
+                        )
+                        
+                        # Создаём документ во временной папке
+                        with tempfile.TemporaryDirectory() as temp_dir:
+                            doc_path = template_generator.generate_legal_document(
+                                template_data=template_data,
+                                output_dir=temp_dir
+                            )
+                            
+                            # Читаем файл
+                            with open(doc_path, 'rb') as f:
+                                doc_bytes = f.read()
+                            
+                            # Сохраняем в session_state для кнопки скачивания
+                            st.session_state[download_key] = {
+                                'data': doc_bytes,
+                                'filename': f"{template_data.get('document_type', 'документ')}.docx"
+                            }
+                            st.rerun()
+                            
+                    except Exception as e:
+                        st.error(f"❌ Ошибка создания документа: {e}")
+            
+            # Кнопка скачивания (появляется после генерации)
+            if download_key in st.session_state:
+                st.download_button(
+                    label="💾 Скачать документ",
+                    data=st.session_state[download_key]['data'],
+                    file_name=st.session_state[download_key]['filename'],
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key=f"dl_{i}",
+                    use_container_width=True
+                )
 
 # === ПОЛЕ ВВОДА ===
 if prompt := st.chat_input("💬 Напишите ваш юридический вопрос..."):
-    # Проверка лимита Free-тарифа
+    # Проверка лимита
     if st.session_state.questions_today >= FREE_LIMIT:
-        st.error(f"""
-        ⚠️ **Лимит Free-тарифа исчерпан!**
-        
-        Сегодня вы уже задали {FREE_LIMIT} вопроса.
-        
-        💎 Оформите Premium для безлимитных консультаций (скоро).
-        
-        🔄 Возвращайтесь завтра — счётчик обновится автоматически.
-        """)
+        st.error("⚠️ Лимит исчерпан! Возвращайтесь завтра.")
         st.stop()
     
-    # Добавляем сообщение пользователя
+    # Сообщение пользователя
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    # Получаем ответ от ИИ
+    # Ответ ИИ
     with st.chat_message("assistant"):
         with st.spinner("🤖 Консультируюсь с законами..."):
-            # Формируем историю для контекста
             chat_history = [
                 {"role": msg["role"], "content": msg["content"]}
                 for msg in st.session_state.messages[:-1]
             ]
             
-            # Запрашиваем ответ у ИИ
             answer = legal_advisor.ask_legal_advisor(
                 question=prompt,
                 category=st.session_state.selected_category,
@@ -195,47 +235,10 @@ if prompt := st.chat_input("💬 Напишите ваш юридический 
                 auth_key=auth_key
             )
             
-            # Форматируем ответ
             formatted_answer = legal_advisor.format_answer_for_display(answer)
-            
-                        # Отображаем ответ
             st.markdown(formatted_answer)
             
-            # === КНОПКА СКАЧИВАНИЯ ДОКУМЕНТА ===
-            if st.button("📄 Скачать готовую претензию", key=f"doc_{len(st.session_state.messages)}"):
-                with st.spinner("📝 Формирую документ..."):
-                    # Формируем полную историю для анализа
-                    full_history = st.session_state.messages.copy()
-                    
-                    # Анализируем чат и извлекаем данные
-                    template_data = template_generator.analyze_chat_for_template(
-                        chat_history=full_history,
-                        category=st.session_state.selected_category,
-                        auth_key=auth_key
-                    )
-                    
-                    # Создаём документ
-                    import tempfile
-                    with tempfile.TemporaryDirectory() as temp_dir:
-                        doc_path = template_generator.generate_legal_document(
-                            template_data=template_data,
-                            output_dir=temp_dir
-                        )
-                        
-                        # Предлагаем скачать
-                        with open(doc_path, 'rb') as f:
-                            st.download_button(
-                                label="💾 Скачать документ",
-                                data=f,
-                                file_name=f"{template_data.get('document_type', 'документ')}.docx",
-                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                use_container_width=True
-                            )
-            
-            # Сохраняем ответ в историю
             st.session_state.messages.append({"role": "assistant", "content": formatted_answer})
-            
-            # Увеличиваем счётчик вопросов
             st.session_state.questions_today += 1
 
 
