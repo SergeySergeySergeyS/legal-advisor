@@ -127,10 +127,10 @@ def parse_template_text(text: str) -> dict:
                 current_content = [content]
             
             # КОМУ
-            elif any(x in line_upper for x in ['КОМУ:', 'АДРЕСАТ:', 'В:', 'АДРЕСАТУ:']):
+            elif any(x in line_upper for x in ['КОМУ:', 'АДРЕСАТ:', 'АДРЕСАТУ:']):
                 save_section()
                 current_section = 'recipient'
-                content = re.sub(r'^(КОМУ|АДРЕСАТ|В|АДРЕСАТУ):\s*', '', line_stripped, flags=re.IGNORECASE)
+                content = re.sub(r'^(КОМУ|АДРЕСАТ|АДРЕСАТУ):\s*', '', line_stripped, flags=re.IGNORECASE)
                 current_content = [content]
             
             # ОТ КОГО
@@ -265,32 +265,90 @@ def generate_legal_document(template_data: dict, output_dir: str) -> str:
     p.add_run(legal_basis)
     doc.add_paragraph()
     
+    # === ТРЕБОВАНИЯ ===
+    p = doc.add_paragraph()
+    run = p.add_run("На основании вышеизложенного ТРЕБУЮ:")
+    run.bold = True
+    
     requirements = template_data.get('requirements', '').strip()
     if not requirements or requirements == '[Требования]':
         requirements = "Удовлетворить мои законные требования в соответствии с действующим законодательством РФ."
-    req_lines = [line.strip() for line in requirements.split('\n') if line.strip()]
     
-    requirements = template_data.get('requirements', '[Требования]')
-    req_lines = [line.strip() for line in requirements.split('\n') if line.strip()]
+    # Разбиваем требования по пунктам (ищем цифры в начале строки)
+    req_lines = []
+    current_line = ""
+    for line in requirements.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        # Если строка начинается с цифры — это новый пункт
+        if re.match(r'^\d+[\.\)]\s*', line):
+            if current_line:
+                req_lines.append(current_line.strip())
+            current_line = re.sub(r'^\d+[\.\)]\s*', '', line)
+        else:
+            current_line += " " + line
+    if current_line:
+        req_lines.append(current_line.strip())
+    
+    # Если не получилось разбить — пробуем разбить по точке с запятой
+    if len(req_lines) <= 1 and ';' in requirements:
+        req_lines = [line.strip() for line in requirements.split(';') if line.strip()]
+    
+    # Если всё ещё один пункт — добавляем как есть
+    if len(req_lines) == 0:
+        req_lines = [requirements]
+    
+    # Выводим каждый пункт отдельным абзацем
     for i, line in enumerate(req_lines, 1):
         # Убираем номера, если они есть
         line = re.sub(r'^\d+[\.\)]\s*', '', line)
         if line:
-            doc.add_paragraph(f"{i}. {line}")
+            p = doc.add_paragraph(f"{i}. {line}")
+            p.paragraph_format.left_indent = Pt(20)
     
     doc.add_paragraph()
+    
+    # === ПРИЛОЖЕНИЯ ===
+    p = doc.add_paragraph()
+    run = p.add_run("Приложения:")
+    run.bold = True
     
     attachments = template_data.get('attachments', '').strip()
     if not attachments or attachments == '[Приложения]':
         attachments = "1. Копия данной претензии с отметкой о вручении\n2. Копии документов, подтверждающих мои требования"
-    att_lines = [line.strip() for line in attachments.split('\n') if line.strip()]
     
-    attachments = template_data.get('attachments', '[Приложения]')
-    att_lines = [line.strip() for line in attachments.split('\n') if line.strip()]
+    # Разбиваем приложения по пунктам
+    att_lines = []
+    current_line = ""
+    for line in attachments.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        # Если строка начинается с цифры — это новый пункт
+        if re.match(r'^\d+[\.\)]\s*', line):
+            if current_line:
+                att_lines.append(current_line.strip())
+            current_line = re.sub(r'^\d+[\.\)]\s*', '', line)
+        else:
+            current_line += " " + line
+    if current_line:
+        att_lines.append(current_line.strip())
+    
+    # Если не получилось разбить — пробуем разбить по точке с запятой
+    if len(att_lines) <= 1 and ';' in attachments:
+        att_lines = [line.strip() for line in attachments.split(';') if line.strip()]
+    
+    # Если всё ещё один пункт — добавляем как есть
+    if len(att_lines) == 0:
+        att_lines = [attachments]
+    
+    # Выводим каждый пункт отдельным абзацем
     for i, line in enumerate(att_lines, 1):
         line = re.sub(r'^\d+[\.\)]\s*', '', line)
         if line:
-            doc.add_paragraph(f"{i}. {line}")
+            p = doc.add_paragraph(f"{i}. {line}")
+            p.paragraph_format.left_indent = Pt(20)
     
     doc.add_paragraph()
     doc.add_paragraph()
