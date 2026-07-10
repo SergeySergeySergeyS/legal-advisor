@@ -2,7 +2,7 @@
 Модуль генерации юридических документов (претензий, жалоб, заявлений)
 """
 from docx import Document
-from docx.shared import Pt, RGBColor
+from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from pathlib import Path
 import re
@@ -19,27 +19,16 @@ def safe_decode(content):
 
 def analyze_chat_for_template(chat_history: list, category: str, auth_key: str) -> dict:
     """
-    Анализирует историю чата и определяет тип документа + извлекает данные
-    
-    Returns:
-        dict с ключами:
-        - document_type: тип документа (претензия, жалоба, иск)
-        - recipient: кому адресован
-        - sender: от кого
-        - situation: описание ситуации
-        - legal_basis: юридическое обоснование
-        - requirements: требования
-        - attachments: приложения
+    Анализирует историю чата и извлекает данные для документа
     """
     try:
-        # Формируем промт для анализа
-        prompt = f"""Проанализируй следующую юридическую консультацию и извлеки данные для создания документа.
+        # Формируем промт
+        prompt = f"""Проанализируй юридическую консультацию и извлеки данные для документа.
 
 КАТЕГОРИЯ: {category}
 
 ИСТОРИЯ ДИАЛОГА:
 """
-        
         for msg in chat_history[-10:]:
             if msg["role"] == "user":
                 prompt += f"Вопрос: {msg['content']}\n"
@@ -47,24 +36,22 @@ def analyze_chat_for_template(chat_history: list, category: str, auth_key: str) 
                 prompt += f"Ответ: {msg['content']}\n"
         
         prompt += """
-ВЕРНИ РЕЗУЛЬТАТ В ФОРМАТЕ JSON (без markdown, просто текст):
-{
-    "document_type": "тип документа (претензия/жалоба/заявление/иск)",
-    "recipient": "кому адресован (организация, должность)",
-    "sender": "от кого (ФИО, адрес, телефон)",
-    "situation": "краткое описание ситуации (2-3 предложения)",
-    "legal_basis": "юридическое обоснование (статьи законов)",
-    "requirements": "требования (нумерованный список)",
-    "attachments": "приложения (список документов)"
-}
+ВЕРНИ РЕЗУЛЬТАТ СТРОГО В ТАКОМ ФОРМАТЕ (каждое поле с новой строки):
+
+ТИП: [претензия/жалоба/заявление]
+КОМУ: [наименование организации, должность]
+ОТ: [ФИО, адрес, телефон - если не указано, оставь пустым]
+СИТУАЦИЯ: [краткое описание 2-3 предложения]
+ЗАКОНЫ: [статьи законов]
+ТРЕБОВАНИЯ: [нумерованный список требований]
+ПРИЛОЖЕНИЯ: [список документов]
 
 ВАЖНО:
-- Если данные не указаны явно (ФИО, адрес) — оставь пустые поля для заполнения
-- document_type определи по контексту (претензия продавцу, жалоба в госорган, иск в суд)
-- situation сформулируй кратко на основе вопроса пользователя
-- legal_basis возьми из ответа ИИ (статьи законов)
-- requirements сформулируй на основе ситуации
-- attachments определи из контекста"""
+- Если ФИО/адрес не указаны — оставь поле пустым
+- ТИП определи по контексту
+- СИТУАЦИЯ кратко на основе вопроса
+- ЗАКОНЫ из ответа ИИ
+- ТРЕБОВАНИЯ по ситуации"""
 
         with GigaChat(
             credentials=auth_key,
@@ -75,45 +62,47 @@ def analyze_chat_for_template(chat_history: list, category: str, auth_key: str) 
             response = giga.chat(Chat(messages=messages))
             result_text = safe_decode(response.choices[0].message.content)
         
-        # Парсим JSON из ответа (простой способ)
-        result = parse_json_from_text(result_text)
-        
+        # Парсим ответ
+        result = parse_template_text(result_text)
         return result
         
     except Exception as e:
-        print(f"Ошибка анализа чата: {e}")
-        return {
-            "document_type": "претензия",
-            "recipient": "[Наименование организации]",
-            "sender": "[ФИО, адрес, телефон]",
-            "situation": "[Описание ситуации]",
-            "legal_basis": "[Статьи законов]",
-            "requirements": "[Требования]",
-            "attachments": "[Приложения]"
-        }
+        print(f"Ошибка анализа: {e}")
+        return get_default_template()
 
 
-def parse_json_from_text(text: str) -> dict:
-    """Извлекает JSON из текста ответа ИИ"""
-    try:
-        # Ищем JSON в тексте
-        json_match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(0)
-            # Простая очистка
-            json_str = json_str.replace('\n', ' ').replace('\r', '')
-            # Парсим вручную (без import json для простоты)
-            result = {}
-            pairs = re.findall(r'"([^"]+)"\s*:\s*"([^"]*)"', json_str)
-            for key, value in pairs:
-                result[key] = value
-            return result
-    except Exception as e:
-        print(f"Ошибка парсинга JSON: {e}")
+def parse_template_text(text: str) -> dict:
+    """Парсит текстовый ответ в словарь"""
+    result = get_default_template()
     
-    # Если не получилось — возвращаем шаблон
+    try:
+        lines = text.split('\n')
+        for line in lines:
+            line = line.strip()
+            if line.startswith('ТИП:'):
+                result['document_type'] = line.replace('ТИП:', '').strip()
+            elif line.startswith('КОМУ:'):
+                result['recipient'] = line.replace('КОМУ:', '').strip()
+            elif line.startswith('ОТ:'):
+                result['sender'] = line.replace('ОТ:', '').strip()
+            elif line.startswith('СИТУАЦИЯ:'):
+                result['situation'] = line.replace('СИТУАЦИЯ:', '').strip()
+            elif line.startswith('ЗАКОНЫ:'):
+                result['legal_basis'] = line.replace('ЗАКОНЫ:', '').strip()
+            elif line.startswith('ТРЕБОВАНИЯ:'):
+                result['requirements'] = line.replace('ТРЕБОВАНИЯ:', '').strip()
+            elif line.startswith('ПРИЛОЖЕНИЯ:'):
+                result['attachments'] = line.replace('ПРИЛОЖЕНИЯ:', '').strip()
+    except Exception as e:
+        print(f"Ошибка парсинга: {e}")
+    
+    return result
+
+
+def get_default_template() -> dict:
+    """Возвращает шаблон по умолчанию"""
     return {
-        "document_type": "претензия",
+        "document_type": "ПРЕТЕНЗИЯ",
         "recipient": "[Наименование организации]",
         "sender": "[ФИО, адрес, телефон]",
         "situation": "[Описание ситуации]",
@@ -126,13 +115,6 @@ def parse_json_from_text(text: str) -> dict:
 def generate_legal_document(template_data: dict, output_dir: str) -> str:
     """
     Создаёт Word-документ на основе данных шаблона
-    
-    Args:
-        template_data: словарь с данными документа
-        output_dir: директория для сохранения
-    
-    Returns:
-        str: путь к созданному файлу
     """
     doc = Document()
     
@@ -141,20 +123,22 @@ def generate_legal_document(template_data: dict, output_dir: str) -> str:
     style.font.name = 'Times New Roman'
     style.font.size = Pt(12)
     
-    # === ШАПКА ДОКУМЕНТА ===
-    # Кому
+    # === ШАПКА ===
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    run = p.add_run(f"{template_data.get('recipient', '[Наименование организации]')}")
+    run = p.add_run(template_data.get('recipient', '[Наименование организации]'))
     run.font.size = Pt(11)
     
-    # От кого
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    run = p.add_run(f"от {template_data.get('sender', '[ФИО, адрес, телефон]')}")
+    sender = template_data.get('sender', '')
+    if sender:
+        run = p.add_run(f"от {sender}")
+    else:
+        run = p.add_run("от ___________________________________\n(ФИО, адрес, телефон)")
     run.font.size = Pt(11)
     
-    doc.add_paragraph()  # Пустая строка
+    doc.add_paragraph()
     
     # === ЗАГОЛОВОК ===
     doc_type = template_data.get('document_type', 'ПРЕТЕНЗИЯ').upper()
@@ -164,22 +148,20 @@ def generate_legal_document(template_data: dict, output_dir: str) -> str:
     run.bold = True
     run.font.size = Pt(14)
     
-    doc.add_paragraph()  # Пустая строка
+    doc.add_paragraph()
     
-    # === ОПИСАНИЕ СИТУАЦИИ ===
+    # === СИТУАЦИЯ ===
     situation = template_data.get('situation', '[Описание ситуации]')
     doc.add_paragraph(situation)
+    doc.add_paragraph()
     
-    doc.add_paragraph()  # Пустая строка
-    
-    # === ЮРИДИЧЕСКОЕ ОБОСНОВАНИЕ ===
+    # === ПРАВОВОЕ ОБОСНОВАНИЕ ===
     legal_basis = template_data.get('legal_basis', '[Статьи законов]')
     p = doc.add_paragraph()
     run = p.add_run("Правовое обоснование: ")
     run.bold = True
     p.add_run(legal_basis)
-    
-    doc.add_paragraph()  # Пустая строка
+    doc.add_paragraph()
     
     # === ТРЕБОВАНИЯ ===
     p = doc.add_paragraph()
@@ -187,16 +169,14 @@ def generate_legal_document(template_data: dict, output_dir: str) -> str:
     run.bold = True
     
     requirements = template_data.get('requirements', '[Требования]')
-    # Разбиваем требования по пунктам
-    req_lines = requirements.split('\n')
+    req_lines = [line.strip() for line in requirements.split('\n') if line.strip()]
     for i, line in enumerate(req_lines, 1):
-        line = line.strip()
-        if line and not line.startswith(tuple('0123456789')):
-            doc.add_paragraph(f"{i}. {line}", style='List Number')
-        elif line:
-            doc.add_paragraph(line)
+        # Убираем номера, если они есть
+        line = re.sub(r'^\d+[\.\)]\s*', '', line)
+        if line:
+            doc.add_paragraph(f"{i}. {line}")
     
-    doc.add_paragraph()  # Пустая строка
+    doc.add_paragraph()
     
     # === ПРИЛОЖЕНИЯ ===
     p = doc.add_paragraph()
@@ -204,23 +184,22 @@ def generate_legal_document(template_data: dict, output_dir: str) -> str:
     run.bold = True
     
     attachments = template_data.get('attachments', '[Приложения]')
-    att_lines = attachments.split('\n')
+    att_lines = [line.strip() for line in attachments.split('\n') if line.strip()]
     for i, line in enumerate(att_lines, 1):
-        line = line.strip()
-        if line and not line.startswith(tuple('0123456789')):
+        line = re.sub(r'^\d+[\.\)]\s*', '', line)
+        if line:
             doc.add_paragraph(f"{i}. {line}")
-        elif line:
-            doc.add_paragraph(line)
     
-    doc.add_paragraph()  # Пустая строка
-    doc.add_paragraph()  # Пустая строка
+    doc.add_paragraph()
+    doc.add_paragraph()
     
     # === ДАТА И ПОДПИСЬ ===
     p = doc.add_paragraph()
     p.add_run("Дата: ___________                    Подпись: ___________")
     
     # === СОХРАНЕНИЕ ===
-    output_path = Path(output_dir) / f"{doc_type}_документ.docx"
+    safe_name = re.sub(r'[^\w\-.]', '_', doc_type)
+    output_path = Path(output_dir) / f"{safe_name}.docx"
     doc.save(str(output_path))
     
     return str(output_path)
