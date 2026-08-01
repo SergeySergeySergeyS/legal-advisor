@@ -110,17 +110,14 @@ if prompt := st.chat_input("Задайте ваш юридический воп�
 3. В конце укажи, какие документы нужны.
 4. Предложи готовый шаблон документа, если уместно."""
     
-    # 4. Запрос к GigaChat (ИСПРАВЛЕННЫЙ СИНТАКСИС)
+    # 4. Запрос к GigaChat (УБРАН temperature, оставлен только список сообщений)
     with st.chat_message("assistant"):
         with st.spinner("🤖 Готовлю юридическую консультацию..."):
             try:
-                response = gigachat.chat(
-                    [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.3
-                )
+                response = gigachat.chat([
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
+                ])
                 answer = response.choices[0].message.content
                 st.markdown(answer)
                 
