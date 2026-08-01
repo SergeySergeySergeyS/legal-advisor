@@ -15,22 +15,26 @@ def get_gigachat():
 
 gigachat = get_gigachat()
 
-# ============ ДИАГНОСТИКА (ВРЕМЕННАЯ КНОПКА) ============
+# ============ ДИАГНОСТИКА (ПУЛЕНЕПРОБИВАЕМАЯ) ============
 st.sidebar.divider()
 if st.sidebar.button("🔍 Проверить доступные модели"):
     try:
         models = gigachat.get_models()
-        model_names = [m.id for m in models.data]
-        st.sidebar.success(f"Найдено моделей: {len(model_names)}")
-        for m in model_names:
-            st.sidebar.write(f"✅ `{m}`")
+        st.sidebar.success("Запрос успешен! Сырой ответ от API:")
+        # Выводим как строку, чтобы избежать ошибок атрибутов
+        st.sidebar.code(str(models)) 
         
-        # Сохраняем первую доступную модель в сессию для теста
-        if model_names:
+        # Пытаемся безопасно извлечь имена, если это список словарей или объектов
+        try:
+            # Пробуем разные варианты названий атрибутов
+            model_names = [getattr(m, 'id', getattr(m, 'model', str(m))) for m in models.data]
             st.session_state["detected_model"] = model_names[0]
-            st.sidebar.info(f"Попробуем использовать: `{model_names[0]}`")
+            st.sidebar.info(f"Первая найденная модель: `{model_names[0]}`")
+        except:
+            st.session_state["detected_model"] = "GigaChat:latest"
+            
     except Exception as e:
-        st.sidebar.error(f"Ошибка получения моделей: {e}")
+        st.sidebar.error(f"Ошибка: {e}")
 
 # ============ КАТЕГОРИИ ============
 CATEGORIES = {
@@ -59,7 +63,8 @@ if "last_date" not in st.session_state:
 if "tariff" not in st.session_state:
     st.session_state.tariff = "🆓 Free"
 if "detected_model" not in st.session_state:
-    st.session_state.detected_model = "GigaChat" # Значение по умолчанию
+    # ИСПРАВЛЕНИЕ: пробуем GigaChat:latest как наиболее вероятный рабочий вариант
+    st.session_state.detected_model = "GigaChat:latest" 
 
 if st.session_state.last_date != date.today().isoformat():
     st.session_state.questions_today = 0
@@ -115,8 +120,7 @@ if prompt := st.chat_input("Задайте ваш юридический воп�
     with st.chat_message("assistant"):
         with st.spinner("🤖 Готовлю консультацию..."):
             try:
-                # Используем модель, которую мы определили через диагностику, или GigaChat по умолчанию
-                current_model = st.session_state.get("detected_model", "GigaChat")
+                current_model = st.session_state.get("detected_model", "GigaChat:latest")
                 
                 response = gigachat.chat({
                     "messages": [
