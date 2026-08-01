@@ -10,31 +10,11 @@ st.set_page_config(page_title="ИИ Юрист", page_icon="⚖️", layout="wid
 def get_gigachat():
     return GigaChat(
         credentials=st.secrets["GIGACHAT_CREDENTIALS"],
+        model="GigaChat-2",  # <-- ВОТ ОНО! ПРАВИЛЬНОЕ ИМЯ МОДЕЛИ
         verify_ssl_certs=False
     )
 
 gigachat = get_gigachat()
-
-# ============ ДИАГНОСТИКА (ПУЛЕНЕПРОБИВАЕМАЯ) ============
-st.sidebar.divider()
-if st.sidebar.button("🔍 Проверить доступные модели"):
-    try:
-        models = gigachat.get_models()
-        st.sidebar.success("Запрос успешен! Сырой ответ от API:")
-        # Выводим как строку, чтобы избежать ошибок атрибутов
-        st.sidebar.code(str(models)) 
-        
-        # Пытаемся безопасно извлечь имена, если это список словарей или объектов
-        try:
-            # Пробуем разные варианты названий атрибутов
-            model_names = [getattr(m, 'id', getattr(m, 'model', str(m))) for m in models.data]
-            st.session_state["detected_model"] = model_names[0]
-            st.sidebar.info(f"Первая найденная модель: `{model_names[0]}`")
-        except:
-            st.session_state["detected_model"] = "GigaChat:latest"
-            
-    except Exception as e:
-        st.sidebar.error(f"Ошибка: {e}")
 
 # ============ КАТЕГОРИИ ============
 CATEGORIES = {
@@ -62,10 +42,8 @@ if "last_date" not in st.session_state:
     st.session_state.last_date = date.today().isoformat()
 if "tariff" not in st.session_state:
     st.session_state.tariff = "🆓 Free"
-if "detected_model" not in st.session_state:
-    # ИСПРАВЛЕНИЕ: пробуем GigaChat:latest как наиболее вероятный рабочий вариант
-    st.session_state.detected_model = "GigaChat:latest" 
 
+# Сброс счётчика при наступлении нового дня
 if st.session_state.last_date != date.today().isoformat():
     st.session_state.questions_today = 0
     st.session_state.last_date = date.today().isoformat()
@@ -74,6 +52,7 @@ if st.session_state.last_date != date.today().isoformat():
 with st.sidebar:
     st.title("⚙️ Настройки")
     st.success("✅ Ключ GigaChat получен")
+    st.info("🤖 Используется модель: **GigaChat-2**")
     
     st.subheader("📋 Категория вопроса")
     category = st.selectbox("Выберите тему:", list(CATEGORIES.keys()))
@@ -94,46 +73,60 @@ with st.sidebar:
     
     st.divider()
     st.subheader("ℹ️ О сервисе")
-    st.caption("🤖 GigaChat (Сбер)")
+    st.caption("⚖️ Ссылки на статьи законов")
+    st.caption("📋 Пошаговые инструкции")
+    st.caption("📄 4 типа документов: Претензия, Жалоба, Иск, Ходатайство")
     st.caption(f"📅 Сегодня: {date.today().strftime('%d.%m.%Y')}")
 
 # ============ ОСНОВНОЙ ЭКРАН ============
 st.title("🎓 Юридический консультант")
-st.markdown("**💬 Задайте вопрос → 🤖 Получите консультацию**")
+st.caption("Ваш персональный ИИ-юрист — отвечает на вопросы простым языком, со ссылками на законы и пошаговыми инструкциями")
+st.markdown("**💬 Задайте вопрос → 🤖 Получите консультацию → 📄 Скачайте готовый документ**")
 
+# Отображение истории чата
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
 # ============ ОБРАБОТКА ВВОДА ============
 if prompt := st.chat_input("Задайте ваш юридический вопрос..."):
+    # 1. Проверка лимита
     if st.session_state.questions_today >= TARIFFS[tariff]["limit"]:
-        st.error(f"❌ Лимит вопросов исчерпан ({limit}).")
+        st.error(f"❌ Лимит вопросов на сегодня исчерпан ({limit}). Оформите Premium-тариф!")
         st.stop()
     
+    # 2. Добавляем вопрос пользователя в историю
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
     
-    system_prompt = f"Ты — профессиональный юридический консультант. Категория: {category}. Отвечай со ссылками на законы РФ, пиши пошаговую инструкцию."
+    # 3. Формируем системный промпт
+    system_prompt = f"""Ты — профессиональный юридический консультант. 
+Категория вопроса: {category}.
+Отвечай на русском языке, простым и понятным языком.
+ОБЯЗАТЕЛЬНО:
+1. Давай ссылки на конкретные статьи законов (ТК РФ, ГК РФ, КоАП, ЗоЗПП и т.д.).
+2. Пиши пошаговую инструкцию, что делать.
+3. В конце укажи, какие документы нужны."""
     
+    # 4. Запрос к GigaChat
     with st.chat_message("assistant"):
-        with st.spinner("🤖 Готовлю консультацию..."):
+        with st.spinner("🤖 Готовлю юридическую консультацию..."):
             try:
-                current_model = st.session_state.get("detected_model", "GigaChat:latest")
-                
                 response = gigachat.chat({
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
                     ],
-                    "model": current_model
+                    "model": "GigaChat-2"  # <-- ЯВНО УКАЗЫВАЕМ МОДЕЛЬ ЗДЕСЬ ТОЖЕ
                 })
                 answer = response.choices[0].message.content
                 st.markdown(answer)
                 
+                # 5. Сохраняем ответ и увеличиваем счётчик
                 st.session_state.messages.append({"role": "assistant", "content": answer})
                 st.session_state.questions_today += 1
                 
             except Exception as e:
-                st.error(f"❌ Ошибка: {e}")
+                error_msg = f"❌ Произошла ошибка при получении ответа: {e}\n\nПожалуйста, проверьте ключ API и попробуйте снова."
+                st.error(error_msg)
