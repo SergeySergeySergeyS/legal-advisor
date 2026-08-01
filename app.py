@@ -9,7 +9,7 @@ st.set_page_config(page_title="ИИ Юрист", page_icon="⚖️", layout="wid
 @st.cache_resource
 def get_gigachat():
     return GigaChat(
-        credentials=st.secrets["GIGACHAT_CREDENTIALS"],
+           credentials=st.secrets["AUTH_KEY"],
         model="GigaChat",           # <-- ВОТ ГЛАВНОЕ ИСПРАВЛЕНИЕ
         verify_ssl_certs=False
     )
