@@ -9,8 +9,8 @@ st.set_page_config(page_title="ИИ Юрист", page_icon="⚖️", layout="wid
 @st.cache_resource
 def get_gigachat():
     return GigaChat(
-        credentials=st.secrets["GIGACHAT_CREDENTIALS"],  # <-- ИСПРАВЛЕНО: правильное имя секрета
-        model="GigaChat",                                # <-- ИСПРАВЛЕНО: явное указание модели
+        credentials=st.secrets["GIGACHAT_CREDENTIALS"],
+        model="GigaChat",
         verify_ssl_certs=False
     )
 
@@ -110,12 +110,12 @@ if prompt := st.chat_input("Задайте ваш юридический воп�
 3. В конце укажи, какие документы нужны.
 4. Предложи готовый шаблон документа, если уместно."""
     
-    # 4. Запрос к GigaChat
+    # 4. Запрос к GigaChat (ИСПРАВЛЕННЫЙ СИНТАКСИС)
     with st.chat_message("assistant"):
         with st.spinner("🤖 Готовлю юридическую консультацию..."):
             try:
                 response = gigachat.chat(
-                    messages=[
+                    [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
                     ],
